@@ -62,7 +62,7 @@ impl<const S: usize, T: Copy + Clone + PartialOrd> Sorted<S, T> {
     #[inline(always)]
     fn insert_first(&mut self, value: T, free_index: u16, next: Option<u16>) {
         self.free = self.data[free_index as usize].1; // allocated new node from free list
-        self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node 
+        self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node
         self.head = Some(free_index); // Update head to new node
     }
 
@@ -75,7 +75,7 @@ impl<const S: usize, T: Copy + Clone + PartialOrd> Sorted<S, T> {
         next: Option<u16>,
     ) -> Result<(), ()> {
         self.free = self.data[free_index as usize].1; // allocated new node from free list
-        self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node 
+        self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node
         self.data[prev_index as usize].1 = Some(free_index); // Update previous node to new node
         Ok(())
     }
