@@ -1,5 +1,7 @@
 #import "@preview/charged-ieee:0.1.4": ieee
 
+#set math.equation(numbering: "(1)")
+
 #show: ieee.with(
   title: [TTA Scheduling in Rust for Safety-Critical Systems],
 
@@ -46,25 +48,8 @@ In the following we sketch the design and implementation of an in-place priority
 
 === Data Structure
 
-Listing <fig:pq_struct> shows the definition of our priority queue struct.
-Backing storage (`data`) is provided by an array, which size is defined as a const generic parameter (`N`). The elements payload is defined as a `MaybeUninit<T>`, where `T` is the type of the items stored in the queue. The wrapping type allows us to leave the initial values uninitialized, and to move owned items in and out of the queue in a well defined manner. As such the `PriorityQueue` struct can be either statically, heap or stack allocated. For concurrent access however, we consider the case of a statically allocated queue unless else specified.
-
-=== Operations
-
-We consider the following set of operations:
-- `new()`, to (statically) create a new empty priority queue,
-- `insert(item: T)`, to concurrently insert an item,
-- `peek()`, to concurrently retrieve the highest priority item without removing it, and
-- `pop()`, to concurrently retrieve and remove the highest priority item.
-
-
-
-
-
-
-
 #figure(
-  // placement: none,
+  placement: none,
   ```rust
   pub struct PriorityQueue<const N: usize, T>
   where
@@ -78,26 +63,119 @@ We consider the following set of operations:
   caption: [Priority Queue struct definition. The queue is backed by a fixed-size array, and can be either statically, heap or stack allocated in compliance to the Rust ownership model.],
 ) <fig:pq_struct>
 
+@fig:pq_struct shows the definition of our priority queue struct.
+Backing storage (`data`) is provided by an array which size is defined as a const generic parameter (`N`). The elements payload is defined as a `MaybeUninit<T>`, where `T` is the type of the items stored in the queue. The wrapping `MaybeUninit` type is a union, allows us to leave the initial values uninitialized, and to move owned items in and out of the queue in a well defined manner. As such the `PriorityQueue` struct can be either statically, heap or stack allocated. For concurrent access however, we consider the case of a statically allocated queue unless else specified.
+
+=== API
+
+We consider the following set of operations:
+- `const fn new() -> Self`, const context queue constructor,
+- `fn insert(&mut self, value: T) -> Result<(), ()>`, concurrent fallible insertion ,
+- `fn peek(&self) -> Option<T>`, concurrent retrieval of the highest priority item without removing it, and
+- `fn pop(&mut self) -> Option<T>`, concurrent retrieval and removal of the highest priority item.
+
+=== Safety
+
+Rust comes with strong safety guarantees, based on strict ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness. In the following we will outline key safety invariants for our implementation based on the below invariants:
+
+#math.equation(block: true, $H ->^* "initialized"$)<eq:initialized>
+
+#math.equation(block: true, $A in F ->^*, H ->^* union F ->^* == \{A\} union H' ->^* union F' ->^*$)<eq:alloc>
+
+#math.equation(block: true, $\{A\} union H ->^* union F ->^* == H' ->^* union F' ->^*, A in F' ->^*$)<eq:dealloc>
+
+In @eq:initialized $H(F) ->^*$ denotes the set of nodes reachable from the `head`(`free`) respectively. @eq:alloc applies to allocation specifically, where $A$ denotes a newly allocated node, and $H'(F) ->^*$ relates the updated state. @eq:dealloc applies to deallocation specifically, where $A$ denotes a newly deallocated node, and $H'(F) ->^*$ relates the updated state.
+
+For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc and @eq:dealloc.
+
+
+==== I) API operation: `const fn new() -> Self`
+
+Written entirely in safe Rust, the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all elements in an uninitialized state, as seen in @fig:pq_new.
 
 #figure(
-  table(
-    // Table styling is not mandated by the IEEE. Feel free to adjust these
-    // settings and potentially move them into a set rule.
-    columns: (auto, auto, auto),
-    align: (auto, auto, auto),
-    inset: (x: 8pt, y: 4pt),
-    stroke: (x, y) => if y <= 1 { (top: 0.5pt) },
-    //fill: (x, y) => if y > 0 and calc.rem(y, 2) == 0 { rgb("#efefef") },
-
-    table.header([Task], [Period ms], [WCET ms]),
-
-    [Task1], [40], [10],
-    [Task2], [60], [15],
-    [Task3], [80], [20],
-  ),
-  caption: [Example 1. System with three periodic tasks without resource sharing.],
   placement: none,
-) <tab:example1>
+  // image("../figs/new.drawio.svg"), // hmm, bug..
+  // image("../figs/new.jpg"), // hmm, bad..
+  image("../figs/new.png"), // seems to work ok...
+  caption: [Priority Queue initialization, ? indicates uninitialized elements.],
+) <fig:pq_new>
+
+==== II) API operation: `insert(&mut self, value: T) -> Result<(), ()>`
+
+This is by far the most complex operation. We will cover it by covering the possible cases in a non-concurrent context, and then discuss the concurrent case.
+
+We have three main cases to consider:
+1. If the queue is full, we return `Err(())`, and the queue remains unchanged. This is trivial and requires no unsafe code.
+2. If the queue is empty, we insert the new value at the head of the queue, and update the `head` and `free` pointers accordingly. This is also straightforward and can be implemented in safe Rust. @fig:pq_first. depicts the state after inserting 4.
+
+#figure(
+  placement: none,
+  image("../figs/first.png"), // seems to work ok...
+  caption: [State of the queue after inserting 4.],
+) <fig:pq_first>
+
+3. If the queue is neither full nor empty, we need to find the correct position for the new value based on its priority, and insert it while maintaining the order. Reading an uninitialized value is illegal in Rust, as it implies undefined behavior (UB). However, following the `head`, always lead us to an initialized value (4 in our example). We start by introducing a local cursor variable, initialized to the `head` of the queue, and we read the value at the cursor.
+
+  Now we have two cases to consider:
+
+  a) the value to insert is of higher/equal priority, so insert before cursor, or
+  b) the value to insert is of lower priority, so continue searching following the cursor. In case the cursor reaches the end of the queue, we insert at the end.
+
+  The two cases are illustrated in @fig:pq_insert.
+
+#figure(
+  placement: none,
+  image("../figs/insert.png"), // seems to work ok...
+  caption: [State of the queue after: a) `insert(2)`, b) `insert(6)`. Notice here, higher priority implies smaller value.],
+) <fig:pq_insert>
+
+==== III) API operation: `fn peek(&self) -> Option<T>`
+
+If the queue is empty, we return `None`, else we can safely read the `head` value due @eq:initialized.
+
+==== IV) API operation: `fn pop(&mut self) -> Option<T>`
+
+If the queue is empty, we return `None`, and leave the queue unchanged. Else we can safely read the `head` value due @eq:initialized, and we update the `head` pointer to the next node in the queue. The popped node is then added to the free list, and we update the `free` pointer accordingly.
+
+=== Concurrency
+
+So far we have covered the safety of the API operations in a non-concurrent context. Upholding the invariant @eq:initialized is key to ensuring that we only read initialized values, @eq:alloc and @eq:dealloc together ensures that nodes are re-cycled between the free list and the allocated list in a well defined manner.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// #figure(
+//   table(
+//     // Table styling is not mandated by the IEEE. Feel free to adjust these
+//     // settings and potentially move them into a set rule.
+//     columns: (auto, auto, auto),
+//     align: (auto, auto, auto),
+//     inset: (x: 8pt, y: 4pt),
+//     stroke: (x, y) => if y <= 1 { (top: 0.5pt) },
+//     //fill: (x, y) => if y > 0 and calc.rem(y, 2) == 0 { rgb("#efefef") },
+
+//     table.header([Task], [Period ms], [WCET ms]),
+
+//     [Task1], [40], [10],
+//     [Task2], [60], [15],
+//     [Task3], [80], [20],
+//   ),
+//   caption: [Example 1. System with three periodic tasks without resource sharing.],
+//   placement: none,
+// ) <tab:example1>
 
 
 // #figure(
@@ -108,7 +186,6 @@ We consider the following set of operations:
 
 
 
-$ R(t_i) = forall j, D(t_j)< D(t_i) sum C(t_j) + C(t_i) $ <eq:gamma>
 
 
 

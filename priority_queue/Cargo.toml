@@ -1,0 +1,10 @@
+[package]
+name = "priority_queue"
+version = "0.1.0"
+edition = "2024"
+
+# [lib]
+# name = "priority_queue"
+# path = "src/lib.rs"
+
+[dependencies]

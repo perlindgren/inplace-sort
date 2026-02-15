@@ -1,24 +1,28 @@
 // #![cfg_attr(not(test), no_std)]
-
+#![allow(static_mut_refs)]
 use core::mem::MaybeUninit;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Sorted<const S: usize, T: Copy + Clone + PartialOrd> {
-    data: [(MaybeUninit<T>, Option<u16>); S],
+pub struct PriorityQueue<const N: usize, T: Copy + Clone + PartialOrd> {
+    data: [(MaybeUninit<T>, Option<u16>); N],
     head: Option<u16>,
     free: Option<u16>,
 }
 
-impl<const S: usize, T: Copy + Clone + PartialOrd> Sorted<S, T> {
+impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     #[inline(always)]
-    pub fn new() -> Self {
-        let mut data: [(MaybeUninit<T>, Option<u16>); S] = [(MaybeUninit::uninit(), None); S];
-        for (i, item) in data.iter_mut().enumerate() {
-            item.1 = if i < S - 1 {
+    pub const fn new() -> Self {
+        let mut data: [(MaybeUninit<T>, Option<u16>); N] = [(MaybeUninit::uninit(), None); N];
+
+        let mut i = 0;
+
+        while i < N {
+            data[i].1 = if i < N - 1 {
                 Some((i + 1) as u16)
             } else {
                 None
             };
+            i += 1;
         }
 
         Self {
@@ -128,12 +132,22 @@ impl<const S: usize, T: Copy + Clone + PartialOrd> Sorted<S, T> {
     }
 }
 
+unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Send for PriorityQueue<S, T> {}
+unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Sync for PriorityQueue<S, T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    fn test_new() {
+        let pq = PriorityQueue::<3, i32>::new();
+        println!("{:?}", pq);
+        assert_eq!(pq.head, None);
+        assert_eq!(pq.free, Some(0));
+    }   
+
+    #[test]
     fn test_pop() {
-        let mut sorted = Sorted::<3, i32> {
+        let mut pq = PriorityQueue::<3, i32> {
             data: [
                 (MaybeUninit::new(1), Some(1)),
                 (MaybeUninit::new(2), Some(2)),
@@ -143,71 +157,73 @@ mod tests {
             free: None,
         };
 
-        println!("{:?}", sorted);
-        assert_eq!(sorted.pop(), Some(1));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.pop(), Some(2));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.pop(), Some(3));
-        assert_eq!(sorted.head, None);
-        assert_eq!(sorted.free, Some(2));
+        println!("{:?}", pq);
+        assert_eq!(pq.pop(), Some(1));
+        println!("{:?}", pq);
+        assert_eq!(pq.pop(), Some(2));
+        println!("{:?}", pq);
+        assert_eq!(pq.pop(), Some(3));
+        assert_eq!(pq.head, None);
+        assert_eq!(pq.free, Some(2));
     }
 
     #[test]
     fn test_insert_first() {
-        let mut sorted = Sorted::<3, i32>::new();
-        println!("{:?}", sorted);
-        assert_eq!(sorted.head, None);
-        assert_eq!(sorted.free, Some(0));
-        assert_eq!(sorted.peek(), None);
+        unsafe {
+            static mut PQ: PriorityQueue<3, i32> = PriorityQueue::<3, i32>::new();
+            println!("{:?}", PQ);
+            assert_eq!(PQ.head, None);
+            assert_eq!(PQ.free, Some(0));
+            assert_eq!(PQ.peek(), None);
 
-        assert_eq!(sorted.insert(3), Ok(()));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.peek(), Some(3));
-        assert_eq!(sorted.head, Some(0));
-        assert_eq!(sorted.free, Some(1));
+            assert_eq!(PQ.insert(3), Ok(()));
+            println!("{:?}", PQ);
+            assert_eq!(PQ.peek(), Some(3));
+            assert_eq!(PQ.head, Some(0));
+            assert_eq!(PQ.free, Some(1));
 
-        assert_eq!(sorted.insert(2), Ok(()));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.insert(1), Ok(()));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.insert(0), Err(()));
-        println!("{:?}", sorted);
+            assert_eq!(PQ.insert(2), Ok(()));
+            println!("{:?}", PQ);
+            assert_eq!(PQ.insert(1), Ok(()));
+            println!("{:?}", PQ);
+            assert_eq!(PQ.insert(0), Err(()));
+            println!("{:?}", PQ);
 
-        assert_eq!(sorted.pop(), Some(1));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.pop(), Some(2));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.pop(), Some(3));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.head, None);
-        assert_eq!(sorted.free, Some(0));
-        assert_eq!(sorted.pop(), None);
+            assert_eq!(PQ.pop(), Some(1));
+            println!("{:?}", PQ);
+            assert_eq!(PQ.pop(), Some(2));
+            println!("{:?}", PQ);
+            assert_eq!(PQ.pop(), Some(3));
+            println!("{:?}", PQ);
+            assert_eq!(PQ.head, None);
+            assert_eq!(PQ.free, Some(0));
+            assert_eq!(PQ.pop(), None);
+        }
     }
 
     #[test]
     fn test_insert_middle() {
-        let mut sorted = Sorted::<3, i32>::new();
-        println!("{:?}", sorted);
+        let mut pq = PriorityQueue::<3, i32>::new();
+        println!("{:?}", pq);
 
-        assert_eq!(sorted.insert(2), Ok(()));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.peek(), Some(2));
-        assert_eq!(sorted.head, Some(0));
-        assert_eq!(sorted.free, Some(1));
+        assert_eq!(pq.insert(2), Ok(()));
+        println!("{:?}", pq);
+        assert_eq!(pq.peek(), Some(2));
+        assert_eq!(pq.head, Some(0));
+        assert_eq!(pq.free, Some(1));
 
-        assert_eq!(sorted.insert(4), Ok(()));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.peek(), Some(2));
+        assert_eq!(pq.insert(4), Ok(()));
+        println!("{:?}", pq);
+        assert_eq!(pq.peek(), Some(2));
 
-        assert_eq!(sorted.insert(3), Ok(()));
-        println!("{:?}", sorted);
-        assert_eq!(sorted.pop(), Some(2));
+        assert_eq!(pq.insert(3), Ok(()));
+        println!("{:?}", pq);
+        assert_eq!(pq.pop(), Some(2));
 
-        assert_eq!(sorted.pop(), Some(3));
-        println!("{:?}", sorted);
+        assert_eq!(pq.pop(), Some(3));
+        println!("{:?}", pq);
 
-        assert_eq!(sorted.pop(), Some(4));
-        println!("{:?}", sorted);
+        assert_eq!(pq.pop(), Some(4));
+        println!("{:?}", pq);
     }
 }
