@@ -137,6 +137,7 @@ unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Sync for PriorityQueue
 #[cfg(test)]
 mod tests {
     use super::*;
+    
     #[test]
     fn test_new() {
         let pq = PriorityQueue::<3, i32>::new();
