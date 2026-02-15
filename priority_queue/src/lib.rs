@@ -9,6 +9,23 @@ pub struct PriorityQueue<const N: usize, T: Copy + Clone + PartialOrd> {
     free: Option<u16>,
 }
 
+struct CsToken;
+
+trait CriticalSection {}
+
+trait PreemptionPoint: CriticalSection {
+    fn preemption_point(cs: &CsToken);
+}
+
+struct cs_single_core;
+
+impl CriticalSection for cs_single_core {}
+impl PreemptionPoint for cs_single_core {
+    #[inline(always)]
+    fn preemption_point(_cs: &CsToken) {
+        // no-op
+    }
+}
 impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     #[inline(always)]
     pub const fn new() -> Self {
@@ -98,6 +115,8 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
                     // find the correct position to insert
                     let mut prev_index = head_index;
 
+                    // mock
+                    let cs = CsToken;
                     loop {
                         // check if last node
                         match self.data[prev_index as usize].1 {
@@ -120,6 +139,7 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
                                 }
                             }
                         }
+                        cs_single_core::preemption_point(&cs);
                     }
                 }
             } else {
@@ -137,14 +157,14 @@ unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Sync for PriorityQueue
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_new() {
         let pq = PriorityQueue::<3, i32>::new();
         println!("{:?}", pq);
         assert_eq!(pq.head, None);
         assert_eq!(pq.free, Some(0));
-    }   
+    }
 
     #[test]
     fn test_pop() {

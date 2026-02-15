@@ -3,10 +3,10 @@
 #set math.equation(numbering: "(1)")
 
 #show: ieee.with(
-  title: [TTA Scheduling in Rust for Safety-Critical Systems],
+  title: [Thread-safe In-Place Priority Queue implementation in Rust],
 
   abstract: [
-    In this short paper, we sketch a thread-safe in-place priority queue implementation in the Rust systems level programming language. We extend the Rust critical section abstraction with support for preemption points, allowing us to give a $O(1)$ upper bound on blocking inferred in a concurrent setting. The overall complexity is $O(n)$ for `insert` and $O(1)$ for `new`, `peek` and `pop`, as expected for our in-place implementation. The queue is backed by a fixed-size array, and can be either statically, heap or stack allocated in compliance to the Rust ownership model.
+    In this short paper, we sketch a thread-safe in-place priority queue implementation in the Rust systems level programming language. We extend the Rust critical section abstraction with support for preemption points, allowing us to give a $O(1)$ upper bound on blocking inferred. The overall complexity is $O(n)$ for `insert` and $O(1)$ for `new`, `peek` and `pop`, as expected for our insertion sort implementation. The queue is backed by a fixed-size array, and can be either statically, heap or stack allocated in compliance to the Rust ownership model. Potential applications include real-time scheduling, event management, and graph algorithms witch requirements to predictable blocking times and memory safety.
   ],
   authors: (
     (
@@ -29,6 +29,26 @@ Rust, with its strong emphasis on memory safety and concurrency, offers a promis
 == Background and Motivation <sec:background>
 
 === Rust for Critical Systems
+
+Rust adopts an ownership model, along with strict borrowing rules, to ensure memory safety without the need for a garbage collector. Rust supports bare-metal programming through its `#![no_std]` mode, excluding dependencies to the standard library and underlying operating system. This makes Rust a compelling choice for embedded and real-time systems, where predictability and low-level control are paramount.
+
+Rust's concurrency model is built around the concept of `Send` and `Sync` traits: types that implement `Send` can be transferred across thread boundaries, while types that implement `Sync` can be safely shared between threads.
+
+In this paper we sketch a thread-safe priority queue implementation, where we can have multiple threads inserting and removing items concurrently, which bounded blocking times.
+
+In a bare metal case, preemptive execution among interrupt handlers is commonly supported by underlying COTS hardware (e.g., ARM Cortex-M). Resource protection is can be achieved through the official `critical-section` crate @critical_section, allowing a passed closure to be executed with interrupts disabled, and thus providing mutual exclusion.
+
+#figure(
+  placement: none,
+  ```rust
+  critical_section::with(|cs| {
+    // This code runs within a critical section.
+  });
+  ```,
+  caption: [The `with` function takes a closure that is executed under mutual exclusion. The `cs` parameter is a token that represents the critical section, and can be used for race free access to shared resources.],
+) <fig:cs>
+
+While offering a structured and platform agnostic API, it lacks support for preemption points.
 
 
 === Earliest Deadline First Scheduling
@@ -138,17 +158,79 @@ If the queue is empty, we return `None`, else we can safely read the `head` valu
 
 If the queue is empty, we return `None`, and leave the queue unchanged. Else we can safely read the `head` value due @eq:initialized, and we update the `head` pointer to the next node in the queue. The popped node is then added to the free list, and we update the `free` pointer accordingly.
 
-=== Concurrency
+=== Concurrency and Blocking
 
 So far we have covered the safety of the API operations in a non-concurrent context. Upholding the invariant @eq:initialized is key to ensuring that we only read initialized values, @eq:alloc and @eq:dealloc together ensures that nodes are re-cycled between the free list and the allocated list in a well defined manner.
 
+As mentioned in the background section, we can use the `critical-section` crate to provide mutual exclusion for our API operations. However, for our implementation the `insert` operation would block for $O(n)$ (insertion sort is linear time). While bounded, the excessive blocking is undesirable in a real-time context. The problem can be somewhat mitigated by more efficient implementations, e.g., the $o(k* log_2 n)$ binary heap. However, with the increased implementation complexity the constant factor $k$ can be significant, and the blocking time can still be excessive for real-time applications.
 
+Instead we propose an extension to the critical section abstraction, where we can define preemption points within the critical section. While not entirely *lock-free*, we can reduced the worst case blocking time to a constant $O(1)$.
 
+=== Preemption Point trait
 
+@fig:preemption_point sketch the proposed `PreemptionPoint` trait. By requiring the `CsToken` we ensure that the `preemption_point` function can only be called within a critical section. Thus the implementation can safely, exit with interrupts disabled, on return.
 
+#figure(
+  placement: none,
+  ```rust
+  trait PreemptionPoint: CriticalSection {
+      fn preemption_point(cs: &CsToken);
+  }
 
+  impl PreemptionPoint for cs_single_core {
+      #[inline(always)]
+      fn preemption_point(_cs: &CsToken) {
+          enable_interrupts();
+          // Allow preemption here
+          disable_interrupts();
+      }
+  }
+  ```,
+  caption: [We extend on the critical section abstraction, by defining a `PreemptionPoint` trait, as a sub-trait of `CriticalSection`. Compiler barriers are enforced by the low-level interrupt enable/disable calls.],
+) <fig:preemption_point>
 
+=== Preemption Point for the `insert` Operation
 
+Focusing on the `insert` operation, we can define a preemption point after each iteration of the search loop, as illustrated in @fig:pq_insert_preemption. This allows other threads to access the queue between iterations, and thus reduces the worst case blocking time to $O(1)$.
+
+#figure(
+  placement: none,
+  ```rust
+    loop {
+      // check if last node
+      match self.data[prev_index as usize].1 {
+          None => {
+              // we reached the end of the list, insert at the end
+              return self.insert_at(value, prev_index, free_index, None);
+          }
+          Some(next_index) => {
+              // smaller than next node,
+              if value < unsafe { self.peek_at(next_index) } {
+                  return self.insert_at(
+                      value,
+                      prev_index,
+                      free_index,
+                      Some(next_index),
+                  );
+              } else {
+                  // move to next node
+                  prev_index = next_index;
+              }
+          }
+          cs_single_core::preemption_point(&cs); // preemption point
+      }
+  }
+  ```,
+  caption: [Insert operation with added preemption point.],
+) <fig:pq_insert_preemption>
+
+=== Thread safety
+
+To argue thread safety of this approach we consider the following cases:
+
+1. Preemption has pop:ed node(s) from the head of the queue.
+2. Preemption has inserted node(s) before the cursor.
+3. Preemption has inserted node(s) after the cursor.
 
 
 
