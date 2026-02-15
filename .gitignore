@@ -3,3 +3,6 @@
 Cargo.lock
 figs/*.dtmp
 .$*
+build/
+*.pdf
+.vscode/
