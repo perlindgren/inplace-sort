@@ -5,8 +5,8 @@ use core::mem::MaybeUninit;
 #[derive(Debug, Clone, Copy)]
 pub struct PriorityQueue<const N: usize, T: Copy + Clone + PartialOrd> {
     data: [(MaybeUninit<T>, Option<u16>); N],
-    head: Option<u16>,
-    free: Option<u16>,
+    // head: Option<u16>,
+    // free: Option<u16>,
 }
 
 struct CsToken;
@@ -28,13 +28,41 @@ impl PreemptionPoint for cs_single_core {
 }
 impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     #[inline(always)]
-    pub const fn new() -> Self {
-        let mut data: [(MaybeUninit<T>, Option<u16>); N] = [(MaybeUninit::uninit(), None); N];
+    const fn head(&self) -> Option<u16> {
+        self.data[0].1
+    }
 
-        let mut i = 0;
+    #[inline(always)]
+    const fn set_head(&mut self, head: Option<u16>) {
+        self.data[0].1 = head;
+    }
+
+    #[inline(always)]
+    const fn free(&self) -> Option<u16> {
+        self.data[1].1
+    }
+
+    #[inline(always)]
+    const fn set_free(&mut self, free: Option<u16>) {
+        self.data[1].1 = free;
+    }
+
+    #[inline(always)]
+    pub const fn new() -> Self {
+        let mut pq = Self {
+            data: [(MaybeUninit::uninit(), None); N],
+        };
+
+        // initialize head
+        pq.set_head(None);
+
+        // initialize free list
+        pq.set_free(Some(2));
+
+        let mut i = 2;
 
         while i < N {
-            data[i].1 = if i < N - 1 {
+            pq.data[i].1 = if i < N - 1 {
                 Some((i + 1) as u16)
             } else {
                 None
@@ -42,23 +70,19 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
             i += 1;
         }
 
-        Self {
-            data,
-            head: None,
-            free: Some(0),
-        }
+        pq
     }
 
     #[inline(always)]
     pub fn pop(&mut self) -> Option<T> {
-        if let Some(i) = self.head {
+        if let Some(i) = self.head() {
             let (value, next) = self.data[i as usize];
-            self.head = next;
-            println!("next {:?}", self.head);
-            self.data[i as usize].1 = self.free;
+            self.set_head(next); // update head 
+            println!("next {:?}", self.head());
+            self.data[i as usize].1 = self.free(); // update free list
 
-            self.free = Some(i);
-            println!("free {:?}", self.free);
+            self.set_free(Some(i));
+            println!("free {:?}", self.free());
 
             Some(unsafe { value.assume_init() })
         } else {
@@ -73,7 +97,7 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
 
     #[inline(always)]
     pub fn peek(&self) -> Option<T> {
-        if let Some(i) = self.head {
+        if let Some(i) = self.head() {
             Some(unsafe { self.peek_at(i) })
         } else {
             None
@@ -82,9 +106,9 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
 
     #[inline(always)]
     fn insert_first(&mut self, value: T, free_index: u16, next: Option<u16>) {
-        self.free = self.data[free_index as usize].1; // allocated new node from free list
+        self.set_free(self.data[free_index as usize].1); // allocated new node from free list
         self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node
-        self.head = Some(free_index); // Update head to new node
+        self.set_head(Some(free_index)); // Update head to new node
     }
 
     #[inline(always)]
@@ -95,7 +119,7 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
         free_index: u16,
         next: Option<u16>,
     ) -> Result<(), ()> {
-        self.free = self.data[free_index as usize].1; // allocated new node from free list
+        self.set_free(self.data[free_index as usize].1); // allocated new node from free list
         self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node
         self.data[prev_index as usize].1 = Some(free_index); // Update previous node to new node
         Ok(())
@@ -104,9 +128,9 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     #[inline(always)]
     pub fn insert(&mut self, value: T) -> Result<(), ()> {
         // check if free list is not empty
-        if let Some(free_index) = self.free {
+        if let Some(free_index) = self.free() {
             // check if list is not empty
-            if let Some(head_index) = self.head {
+            if let Some(head_index) = self.head() {
                 // list is not empty, find correct position to insert
                 if value < self.peek().unwrap() {
                     // less then first element
@@ -160,22 +184,24 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let pq = PriorityQueue::<3, i32>::new();
+        let pq = PriorityQueue::<5, i32>::new();
         println!("{:?}", pq);
-        assert_eq!(pq.head, None);
-        assert_eq!(pq.free, Some(0));
+        assert_eq!(pq.data[0].1, None);
+        assert_eq!(pq.data[1].1, Some(2));
     }
 
     #[test]
     fn test_pop() {
-        let mut pq = PriorityQueue::<3, i32> {
+        let mut pq = PriorityQueue::<5, i32> {
             data: [
-                (MaybeUninit::new(1), Some(1)),
-                (MaybeUninit::new(2), Some(2)),
+                (MaybeUninit::uninit(), Some(2)),
+                (MaybeUninit::uninit(), None),
+                (MaybeUninit::new(1), Some(3)),
+                (MaybeUninit::new(2), Some(4)),
                 (MaybeUninit::new(3), None),
             ],
-            head: Some(0),
-            free: None,
+            //         head: Some(0),
+            //         free: None,
         };
 
         println!("{:?}", pq);
@@ -184,29 +210,32 @@ mod tests {
         assert_eq!(pq.pop(), Some(2));
         println!("{:?}", pq);
         assert_eq!(pq.pop(), Some(3));
-        assert_eq!(pq.head, None);
-        assert_eq!(pq.free, Some(2));
+        println!("{:?}", pq);
+        assert_eq!(pq.head(), None);
+        assert_eq!(pq.free(), Some(4));
     }
 
     #[test]
     fn test_insert_first() {
         unsafe {
-            static mut PQ: PriorityQueue<3, i32> = PriorityQueue::<3, i32>::new();
+            static mut PQ: PriorityQueue<5, i32> = PriorityQueue::<5, i32>::new();
             println!("{:?}", PQ);
-            assert_eq!(PQ.head, None);
-            assert_eq!(PQ.free, Some(0));
+            assert_eq!(PQ.head(), None);
+            assert_eq!(PQ.free(), Some(2));
             assert_eq!(PQ.peek(), None);
 
             assert_eq!(PQ.insert(3), Ok(()));
             println!("{:?}", PQ);
             assert_eq!(PQ.peek(), Some(3));
-            assert_eq!(PQ.head, Some(0));
-            assert_eq!(PQ.free, Some(1));
+            assert_eq!(PQ.head(), Some(2));
+            assert_eq!(PQ.free(), Some(3));
 
             assert_eq!(PQ.insert(2), Ok(()));
             println!("{:?}", PQ);
+            assert_eq!(PQ.peek(), Some(2));
             assert_eq!(PQ.insert(1), Ok(()));
             println!("{:?}", PQ);
+            assert_eq!(PQ.peek(), Some(1));
             assert_eq!(PQ.insert(0), Err(()));
             println!("{:?}", PQ);
 
@@ -216,22 +245,22 @@ mod tests {
             println!("{:?}", PQ);
             assert_eq!(PQ.pop(), Some(3));
             println!("{:?}", PQ);
-            assert_eq!(PQ.head, None);
-            assert_eq!(PQ.free, Some(0));
+            assert_eq!(PQ.head(), None);
+            assert_eq!(PQ.free(), Some(2));
             assert_eq!(PQ.pop(), None);
         }
     }
 
     #[test]
     fn test_insert_middle() {
-        let mut pq = PriorityQueue::<3, i32>::new();
+        let mut pq = PriorityQueue::<5, i32>::new();
         println!("{:?}", pq);
 
         assert_eq!(pq.insert(2), Ok(()));
         println!("{:?}", pq);
         assert_eq!(pq.peek(), Some(2));
-        assert_eq!(pq.head, Some(0));
-        assert_eq!(pq.free, Some(1));
+        assert_eq!(pq.head(), Some(2));
+        assert_eq!(pq.free(), Some(3));
 
         assert_eq!(pq.insert(4), Ok(()));
         println!("{:?}", pq);
