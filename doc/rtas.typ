@@ -141,14 +141,14 @@ following properties:
 
 #figure(
   placement: auto,
-  image("../build/figs/arrival_handler.pdf", width: 35%),
+  image("../build/figs/arrival_handler.pdf", width: 40%),
   caption: [Example implementation of an @EDF arrival handler $A_i$.],
 )
 <fig:arrival-handler>
 
 #figure(
   placement: auto,
-  image("../build/figs/interrupt.pdf", width: 70%),
+  image("../build/figs/interrupt.pdf", width: 90%),
   caption: [Arrival and dispatch handlers sorted by preemption level. Arrival handlers are assigned
     higher priorities to minimize time-stamp jitter.],
 )
@@ -237,15 +237,14 @@ By performing the _extractMin_ operation at the level of the currently highest p
 
 = Conclusions
 
+In this short paper we have sketched a concurrent priority queue implementation, and argued constant time blocking times for all operations. The in-place designs allows for efficient memory usage and static allocation, meeting our requirements for real-time scheduling applications.
+
 == Future work
 
-Opportunities to expand and improve this work are plentiful. In particular, we strive to:
+In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy based @EDF scheduler. For the implementation, we intend to leverage on the Rust language for zero-cost abstractions, and provide safe APIs for inherently unsafe operations.
 
-- Elaborate a full implementation, as an open-source library in the Rust systems programming
-  language;
-- Provide a formal proof of correctness and memory safety;
-- Integrate the @PQ implementation in an @EDF scheduler to evaluate its performance and real-time
-  properties.
+
+
 
 
 
