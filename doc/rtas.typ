@@ -170,6 +170,44 @@ following properties:
 In the following we sketch the design and implementation of an in-place priority queue in Rust, and
 discuss design decisions in regards to aforementioned requirements.
 
+== Array-based Linked List
+
+For the sake of simplicity, we implement the priority queue as a linked list backed by a fixed-size
+array. In-place operations are achieved by maintaining a free list of available nodes.
+
+- _insert_:  Insertion is unsorted, through appending elements at the end of the list. Node updates are protected by a critical section, which is implemented by disabling interrupts. This critical section is of constant time $cal(O)(1)$, as it only involves a single node.
+
+- _min_: The minimum element is updated on insertion and on _extractMin_. Access to the minimum element is protected by a critical section, which is also of constant time $cal(O)(1)$.
+
+- _extractMin_: Extraction of the minimum element is performed by traversing the list to find the minimum element, and then removing it from the list. This operation has a time complexity of $cal(O)(N)$, where $N$ is the number of elements in the queue. However, since insertion is unsorted (at the end of the list, the critical section is $cal(O)(1)$, as it only involves a single node.
+
+The implementation is thread-safe, thus allows for concurrent access from multiple execution contexts (in our case, the arrival and dispatch handlers).
+
+== Work Stealing
+
+Dispatch handlers execute concurrently, where a higher priority dispatch handler may preempt an ongoing _extractMin_ operation. The higher priority handler steals the cursor, and current minimum value encountered, continuing the traversal on behalf of the preempted _extractMin_ operation.
+
+Once the traversal is complete, the minimum element (if any) is removed from the list, protected by a critical section. The critical section is of constant time $cal(O)(1)$, as it only involves a constant number of node updates. The stolen cursor is set to indicate that the steal is complete, thus the resumed _extractMin_ can immediately return (without additional traversal).
+
+This ensures that the amortized work for _extractMin_ of each enqueued element is $cal(O)(N)$.
+
+== Dispatcher Design
+
+By performing the _extractMin_ operation at the level of the currently highest priority task, we ensure that dispatch latency is free of priority inversion, blocked only by the currently most urgent task.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // #figure(
 //   table(
 //     // Table styling is not mandated by the IEEE. Feel free to adjust these
