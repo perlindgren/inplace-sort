@@ -158,15 +158,24 @@ implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairi
 
 We consider an @EDF kernel where arriving tasks are signalled to an interrupt handler, assigned to
 the maximum system priority. This interrupt handler may then either dispatch the task to run on a
-lower priority handler, or enqueue the task in a priority queue for later retrieval and execution.
-Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
-following properties:
+lower priority handler, or enqueue the task in a priority queue for later retrieval and execution
+(@fig:arrival-handler). As tasks complete execution on their dispatch handlers, they may extract and
+dispatch a new task from the priority queue, if the latter's absolute deadline is smaller than the
+currently executing task. Therefore, for the purpose of @EDF scheduling, we seek a priority queue
+implementation with the following properties:
 
 - Support for concurrent access from multiple execution contexts (e.g., threads or interrupts
   handlers).
 - Bounded blocking times for concurrent access, with constant time $O(1)$ upper bounds.
 - Implementation should not depend on dynamic memory allocations, and should be resource efficient
   in terms of both memory and CPU usage.
+
+#figure(
+  placement: auto,
+  image("../build/figs/arrival_handler.pdf", width: 30%),
+  caption: [Example implementation of an @EDF arrival handler],
+)
+<fig:arrival-handler>
 
 == Contributions
 
@@ -395,12 +404,7 @@ To argue thread safety of this approach we consider the following cases:
 2. Preemption has inserted node(s) before the cursor.
 3. Preemption has inserted node(s) after the cursor.
 
-
-
-
-
-
-
+= Conclusions
 
 // #figure(
 //   table(
