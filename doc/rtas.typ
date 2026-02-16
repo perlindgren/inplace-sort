@@ -37,7 +37,7 @@
 #set math.equation(numbering: "(1)")
 
 #show: ieee.with(
-  title: [Work in Progress: A Thread-Safe, In-Place Priority Task Queue],
+  title: [Work in Progress: A Concurrent Priroity Queue with Constant-Time Blocking],
 
   abstract: [
     In this short paper, we sketch a thread-safe in-place priority queue implementation in the Rust
@@ -66,12 +66,14 @@
     ),
   ),
   index-terms: (
-    "Memory Safety",
-    "Priority Queue",
-    "Concurrency",
-    "Blocking",
-    "Defined Behavior",
-    "Real-Time",
+    "memory safety",
+    "priority queue",
+    "concurrency",
+    "blocking",
+    "defined behavior",
+    "real-time",
+    "data structures",
+    "critical section",
   ),
 
   bibliography: bibliography("refs.bib"),
@@ -79,53 +81,69 @@
 )
 
 = Introduction
-Rust, with its strong emphasis on memory safety and concurrency, offers a promising platform for
-implementing safety, security, and timing critical systems. Priority queues find many applications
-in software systems, including real-time scheduling, event management, and graph algorithms. In this
-paper we will explore opportunities and challenges involved towards a thread-safe, in-place priority
-queue implementation. To provide upper bounds on blocking times in concurrent settings we extend
-Rust's critical section abstraction to support preemption points, allowing us to provide constant
-time $O(1)$ upper bounds on blocking times in concurrent settings.
+@PQ:pla find many applications in software systems, including real-time scheduling, event
+management, and graph algorithms. In embedded and real-time systems, @DP scheduler kernel
+implementations typically rely on @PQ:pla to store incoming tasks and retrieve the highest priority
+task to be executed. These data structures are challenging to implement correctly and efficiently in
+a concurrent environment; they have therefore been an area of extensive research.
+
+One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing
+concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On
+single-core systems, these locks are typically implemented as critical sections--i.e., a section of
+code which executes with interrupts disabled. However, schedulability criteria and task execution
+jitter are generally dependent on the length of the _longest_ critical section in a given system; it
+is therefore of interest to limit locks to a strict minimum.
+
+Some work has gone into implementing lock-free or concurrent @PQ:pla: #hl[[...]]. While not a PQ, in
+@harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list based,
+with node manipulations based on @CAS operations. These operations are however faillible; making
+such an implementation for a scheduler kernel, where retrying operations can lead to unbounded
+execution time.
+
+// Rust, with its strong emphasis on memory safety and concurrency, offers a promising platform for
+// implementing safety, security, and timing critical systems.
+
+In this paper we will explore opportunities and challenges involved towards a thread-safe, in-place
+priority queue implementation. We strive to provide $O(1)$ upper bounds on blocking times in
+concurrent settings.
 
 == Background and Motivation <sec:background>
 
-=== Rust for Critical Systems
+// === Rust for Critical Systems
+// Rust adopts an ownership model, #todo[keep this section?]along with strict borrowing rules, to
+// ensure memory safety without the need for a garbage collector. Rust supports bare-metal programming
+// through its `#![no_std]` mode, excluding dependencies to the standard library and underlying
+// operating system. This makes Rust a compelling choice for embedded and real-time systems, where
+// predictability and low-level control are paramount.
 
-Rust adopts an ownership model, along with strict borrowing rules, to ensure memory safety without
-the need for a garbage collector. Rust supports bare-metal programming through its `#![no_std]`
-mode, excluding dependencies to the standard library and underlying operating system. This makes
-Rust a compelling choice for embedded and real-time systems, where predictability and low-level
-control are paramount.
+// Rust's concurrency model is built around the concept of `Send` and `Sync` traits: types that
+// implement `Send` can be transferred across thread boundaries, while types that implement `Sync` can
+// be safely shared between threads.
 
-Rust's concurrency model is built around the concept of `Send` and `Sync` traits: types that
-implement `Send` can be transferred across thread boundaries, while types that implement `Sync` can
-be safely shared between threads.
+// In this paper we sketch a thread-safe priority queue implementation, where we can have multiple
+// threads inserting and removing items concurrently, which bounded blocking times.
 
-In this paper we sketch a thread-safe priority queue implementation, where we can have multiple
-threads inserting and removing items concurrently, which bounded blocking times.
+// In a bare metal case, preemptive execution among interrupt handlers is commonly supported by
+// underlying @COTS hardware (e.g., ARM Cortex-M). Resource protection is can be achieved through the
+// official `critical-section` crate @critical_section, allowing a passed closure to be executed with
+// interrupts disabled, and thus providing mutual exclusion.
 
-In a bare metal case, preemptive execution among interrupt handlers is commonly supported by
-underlying @COTS hardware (e.g., ARM Cortex-M). Resource protection is can be achieved through the
-official `critical-section` crate @critical_section, allowing a passed closure to be executed with
-interrupts disabled, and thus providing mutual exclusion.
+// #figure(
+//   placement: none,
+//   ```rust
+//   critical_section::with(|cs| {
+//     // This code runs within a critical section.
+//   });
+//   ```,
+//   caption: [The `with` function takes a closure that is executed under mutual exclusion. The `cs`
+//     parameter is a token that represents the critical section, and can be used for race free access
+//     to shared resources.],
+// ) <fig:cs>
 
-#figure(
-  placement: none,
-  ```rust
-  critical_section::with(|cs| {
-    // This code runs within a critical section.
-  });
-  ```,
-  caption: [The `with` function takes a closure that is executed under mutual exclusion. The `cs`
-    parameter is a token that represents the critical section, and can be used for race free access
-    to shared resources.],
-) <fig:cs>
-
-While offering a structured and platform agnostic API, it lacks support for preemption points.
+// While offering a structured and platform agnostic API, it lacks support for preemption points.
 
 
 === @EDF:lo Scheduling
-
 In common priority queues allow elements to be extracted under some given ordering. Classical
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
@@ -171,7 +189,6 @@ struct can be either statically, heap or stack allocated. For concurrent access 
 the case of a statically allocated queue unless else specified.
 
 === API
-
 We consider the following set of operations:
 - `const fn new() -> Self`, const context queue constructor,
 - `fn insert(&mut self, value: T) -> Result<(), ()>`, concurrent fallible insertion ,
@@ -180,7 +197,6 @@ We consider the following set of operations:
 - `fn pop(&mut self) -> Option<T>`, concurrent retrieval and removal of the highest priority item.
 
 === Safety
-
 Rust comes with strong safety guarantees, based on strict ownership and borrowing rules. However, in
 order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees
 using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the
