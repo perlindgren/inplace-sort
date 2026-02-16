@@ -96,9 +96,9 @@ is therefore of interest to limit locks to a strict minimum.
 Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure
 presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert`
 and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed
-infaillible; resource-limited embedded systems rarely implement truly infaillible @CAS operations,
+infallible; resource-limited embedded systems rarely implement truly infallible @CAS operations,
 such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm.
-Other implementations use skip-lists and randomized access to amortize asymptotic time complexite
+Other implementations use skip-lists and randomized access to amortize asymptotic time complexity
 @sundellFastLockfreeConcurrent2003. While not a PQ, in
 @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
 node manipulations also based on @CAS operations. These operations are however fallible; thus unsuitable for hard real-time kernel implementations, as the worst case blocking time is unbounded.
