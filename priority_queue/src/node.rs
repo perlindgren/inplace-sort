@@ -6,7 +6,7 @@ pub(crate) type NodePtr = Option<NonZeroU16>;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Node<T: Copy> {
     pub data: MaybeUninit<T>,
-    pub ptr: NodePtr,
+    pub next: NodePtr,
 }
 
 impl<T: Copy> Node<T> {
@@ -14,7 +14,7 @@ impl<T: Copy> Node<T> {
     pub const fn new(data: T, ptr: NodePtr) -> Self {
         Self {
             data: MaybeUninit::new(data),
-            ptr,
+            next: ptr,
         }
     }
 
@@ -23,7 +23,7 @@ impl<T: Copy> Node<T> {
     pub const fn new_uninit(ptr: NodePtr) -> Self {
         Self {
             data: MaybeUninit::uninit(),
-            ptr,
+            next: ptr,
         }
     }
 
@@ -31,7 +31,7 @@ impl<T: Copy> Node<T> {
     pub const fn new_empty() -> Self {
         Self {
             data: MaybeUninit::uninit(),
-            ptr: None,
+            next: None,
         }
     }
 }

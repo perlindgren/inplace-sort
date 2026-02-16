@@ -51,22 +51,22 @@ where
 {
     #[inline(always)]
     const fn head(&self) -> NodePtr {
-        self.data[0].ptr
+        self.data[0].next
     }
 
     #[inline(always)]
     const fn set_head(&mut self, head: NodePtr) {
-        self.data[0].ptr = head;
+        self.data[0].next = head;
     }
 
     #[inline(always)]
     const fn free(&self) -> NodePtr {
-        self.data[1].ptr
+        self.data[1].next
     }
 
     #[inline(always)]
     const fn set_free(&mut self, free: NodePtr) {
-        self.data[1].ptr = free;
+        self.data[1].next = free;
     }
 
     #[inline(always)]
@@ -84,7 +84,7 @@ where
         // It's stupid we can't use for loops in const fns :(
         let mut i = 2;
         while i < N {
-            pq.data[i].ptr = if i < N - 1 {
+            pq.data[i].next = if i < N - 1 {
                 NonZeroU16::new(i as u16 + 1)
             } else {
                 None
@@ -102,7 +102,7 @@ where
 
         // SAFETY: no need to check, we already verified list isn't empty
         let node = self.data[i.to_usize()];
-        let next = node.ptr;
+        let next = node.next;
 
         // Update head
         self.set_head(next);
@@ -111,7 +111,7 @@ where
         println!("next {:?}", self.head());
 
         // Update free list
-        self.data[i.to_usize()].ptr = self.free();
+        self.data[i.to_usize()].next = self.free();
         self.set_free(Some(i));
 
         #[cfg(feature = "std")]
@@ -134,7 +134,7 @@ where
     #[inline(always)]
     fn insert_first(&mut self, value: T, free_index: NonZeroU16, next: NodePtr) {
         // Allocated new node from free list
-        self.set_free(self.data[free_index.to_usize()].ptr);
+        self.set_free(self.data[free_index.to_usize()].next);
 
         // Last node
         self.data[free_index.to_usize()] = Node::new(value, next);
@@ -152,13 +152,13 @@ where
         next: NodePtr,
     ) -> Result<(), Error> {
         // Allocated new node from free list
-        self.set_free(self.data[free_index.to_usize()].ptr);
+        self.set_free(self.data[free_index.to_usize()].next);
 
         // Last node
         self.data[free_index.to_usize()] = Node::new(value, next);
 
         // Update previous node to new node
-        self.data[prev_index.to_usize()].ptr = Some(free_index);
+        self.data[prev_index.to_usize()].next = Some(free_index);
 
         Ok(())
     }
@@ -191,7 +191,7 @@ where
             let cs = CsToken;
             loop {
                 // check if last node
-                match self.data[prev_index.to_usize()].ptr {
+                match self.data[prev_index.to_usize()].next {
                     None => {
                         // we reached the end of the list, insert at the end
                         return self.insert_at(value, prev_index, free_index, None);
@@ -225,8 +225,8 @@ mod tests {
     fn test_new() {
         let pq = PriorityQueue::<i32, 5>::new();
         println!("{:?}", pq);
-        assert_eq!(pq.data[0].ptr, None);
-        assert_eq!(pq.data[1].ptr, NonZeroU16::new(2));
+        assert_eq!(pq.data[0].next, None);
+        assert_eq!(pq.data[1].next, NonZeroU16::new(2));
     }
 
     #[test]
