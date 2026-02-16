@@ -82,9 +82,11 @@
 )
 
 = Introduction
-There exists many applications based on @PQ:pla, including real-time scheduling, event
-management, and graph algorithms. In embedded and real-time systems, @DP scheduler kernel
-implementations typically rely on @PQ:pla to manage incoming task arrivals and retrieve the highest priority task to be executed. These data structures are challenging to implement correctly and efficiently in a concurrent environment; they have therefore been an area of extensive research.
+There exists many applications based on @PQ:pla, including real-time scheduling, event management,
+and graph algorithms. In embedded and real-time systems, @DP scheduler kernel implementations
+typically rely on @PQ:pla to manage incoming task arrivals and retrieve the highest priority task to
+be executed. These data structures are challenging to implement correctly and efficiently in a
+concurrent environment; they have therefore been an area of extensive research.
 
 One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing
 concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On
@@ -101,15 +103,14 @@ such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrol
 Other implementations use skip-lists and randomized access to amortize asymptotic time complexity
 @sundellFastLockfreeConcurrent2003. While not a PQ, in
 @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
-node manipulations also based on @CAS operations. These operations are however fallible; thus unsuitable for hard real-time kernel implementations, as the worst case blocking time is unbounded.
+node manipulations also based on @CAS operations. These operations are however fallible, and thus
+unsuitable for hard real-time kernel implementations, as the worst case blocking time is unbounded.
 
 // Rust, with its strong emphasis on memory safety and concurrency, offers a promising platform for
 // implementing safety, security, and timing critical systems.
 
-In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds on blocking times targeting single core @COTS hardware.
-
-
-
+In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds
+on blocking times targeting single core @COTS hardware.
 
 // === Rust for Critical Systems
 // Rust adopts an ownership model, #todo[keep this section?]along with strict borrowing rules, to
@@ -167,7 +168,7 @@ implementation with the following properties:
 
 #figure(
   placement: auto,
-  image("../build/figs/arrival_handler.pdf", width: 30%),
+  image("../build/figs/arrival_handler.pdf", width: 35%),
   caption: [Example implementation of an @EDF arrival handler],
 )
 <fig:arrival-handler>
