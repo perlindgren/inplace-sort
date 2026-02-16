@@ -50,3 +50,42 @@
   langid = {english},
   keywords = {Concurrent Thread,Left Node,Linearization Point,Marked Node,Tail Node},
 }
+
+@report{liuLockFreeArrayBasedPriority2011,
+  title = {A {{Lock-Free}}, {{Array-Based Priority Queue}}},
+  author = {Liu, Yujie and Spear, Michael},
+  date = {2011},
+  number = {LU-CSE-11-004},
+  institution = {Lehigh University},
+  url = {https://engineering.lehigh.edu/sites/engineering.lehigh.edu/files/_DEPARTMENTS/cse/research/tech-reports/2011/lu-cse-11-004.pdf},
+  urldate = {2025-11-19},
+  abstract = {This paper introduces a concurrent data structure called the mound. The mound is a rooted tree of sorted lists that relies on randomization for balance. It supports O(log(log(N ))) insert() and O(log(N )) extractMin() operations, making it suitable for use as a priority queue. We present two mound algorithms: the first achieves lock freedom via the use of a pure-software double-compare-andswap (DCAS), and the second uses fine grained locks. Mounds perform well in practice, and support several novel operations that we expect to be useful in future parallel applications, such as extractMany() and probabilistic extractMin().},
+  langid = {english},
+  file = {/home/justinb/Zotero/storage/J42XBAZ3/Liu and Spear - A Lock-Free, Array-Based Priority Queue.pdf;/home/justinb/Zotero/storage/LE2QIYRW/2370036.2145876.pdf}
+}
+
+@inproceedings{sundellFastLockfreeConcurrent2003,
+  title = {Fast and Lock-Free Concurrent Priority Queues for Multi-Thread Systems},
+  booktitle = {Proceedings {{International Parallel}} and {{Distributed Processing Symposium}}},
+  author = {Sundell, H. and Tsigas, P.},
+  date = {2003-04},
+  pages = {11 pp.-},
+  issn = {1530-2075},
+  doi = {10.1109/IPDPS.2003.1213189},
+  url = {https://ieeexplore.ieee.org/document/1213189},
+  urldate = {2025-11-19},
+  abstract = {We present an efficient and practical lock-free implementation of a concurrent priority queue that is suitable for both fully concurrent (large multi-processor) systems as well as pre-emptive (multi-process) systems. Many algorithms for concurrent priority queues are based on mutual exclusion. However, mutual exclusion causes blocking which has several drawbacks and degrades the system's overall performance. Non-blocking algorithms avoid blocking, and are either lock-free or wait-free. Previously known non-blocking algorithms of priority queues did not perform well in practice because of their complexity, and they are often based on non-available atomic synchronization primitives. Our algorithm is based on the randomized sequential list structure called Skiplist, and a real-time extension of our algorithm is also described. In our performance evaluation we compare our algorithm with some of the most efficient implementations of priority queues known. The experimental results clearly show that our lock-free implementation outperforms the other lock-based implementations in all cases for 3 threads and more, both on fully concurrent as well as on pre-emptive systems.},
+  eventtitle = {International {{Parallel}} and {{Distributed Processing Symposium}}},
+  keywords = {Concurrent computing,Councils,Data structures,Degradation,Operating systems,Real time systems,Research initiatives,Subspace constraints,System recovery,Yarn},
+  file = {/home/justinb/Zotero/storage/8568AJ6V/Sundell and Tsigas - 2003 - Fast and lock-free concurrent priority queues for multi-thread systems.pdf}
+}
+
+@misc{arm-v7m-arm,
+        title = {Armv7-M Architecture Reference Manual},
+        url = {https://developer.arm.com/documentation/ddi0403/latest/},
+        publisher = {Arm Limited},
+        author = {{Arm Limited}},
+        date = {2021},
+        langid = {english},
+}
+

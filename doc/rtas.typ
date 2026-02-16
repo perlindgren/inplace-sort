@@ -94,9 +94,15 @@ code which executes with interrupts disabled. However, schedulability criteria a
 jitter are generally dependent on the length of the _longest_ critical section in a given system; it
 is therefore of interest to limit locks to a strict minimum.
 
-Some work has gone into implementing lock-free or concurrent @PQ:pla: #hl[[...]]. While not a PQ, in
-@harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list based,
-with node manipulations based on @CAS operations. These operations are however faillible; making
+Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure
+presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $O(log(log(N)))$ `insert` and
+$O(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed
+infaillible; resource-limited embedded systems rarely implement truly infaillible @CAS operations,
+such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm.
+Other implementations use skip-lists and randomized access to amortize asymptotic time complexite
+@sundellFastLockfreeConcurrent2003. While not a PQ, in
+@harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
+node manipulations also based on @CAS operations. These operations are however faillible; making
 such an implementation for a scheduler kernel, where retrying operations can lead to unbounded
 execution time.
 
