@@ -40,14 +40,15 @@
   title: [Work in Progress: A Concurrent Priroity Queue with Constant-Time Blocking],
 
   abstract: [
-    In this short paper, we sketch a thread-safe in-place priority queue implementation in the Rust
-    systems level programming language. We extend the Rust critical section abstraction with support
-    for preemption points, allowing us to give a $O(1)$ upper bound on blocking inferred. The
-    overall complexity is $O(n)$ for `insert` and $O(1)$ for `new`, `peek` and `pop`, as expected
-    for our insertion sort implementation. The queue is backed by a fixed-size array, and can be
-    either statically, heap or stack allocated in compliance to the Rust ownership model. Potential
-    applications include real-time scheduling, event management, and graph algorithms witch
-    requirements to predictable blocking times and memory safety.
+    In @DP scheduling, kernels generally rely on priority queues to select the task to be executed.
+    The choice of queue implementation introduces tradeoffs with respect to software overhead,
+    memory usage and blocking times. A key consideration is thread-safety and memory safety. In this
+    short paper, we sketch an unsorted, thread-safe in-place priority queue allowing an $O(1)$ upper
+    bound on inferred blocking, as well as $O(1)$ `insert`, $O(1)$ `min` and $O(N)$ `extractMin`
+    operations. The queue is implemented as a linked list backed by a fixed-size array, and can be
+    allocated either statically, on the heap or on the stack. Potential applications include
+    real-time scheduling, event management, and graph algorithms where predictable and minimal
+    blocking times are paramount.
   ],
   authors: (
     (
@@ -110,10 +111,10 @@ execution time.
 // implementing safety, security, and timing critical systems.
 
 In this paper we will explore opportunities and challenges involved towards a thread-safe, in-place
-priority queue implementation. We strive to provide $O(1)$ upper bounds on blocking times in
+priority queue implementation. We strive to provide constant upper bounds on blocking times in
 concurrent settings.
 
-== Background and Motivation <sec:background>
+
 
 // === Rust for Critical Systems
 // Rust adopts an ownership model, #todo[keep this section?]along with strict borrowing rules, to
@@ -149,21 +150,29 @@ concurrent settings.
 // While offering a structured and platform agnostic API, it lacks support for preemption points.
 
 
-=== @EDF:lo Scheduling
-In common priority queues allow elements to be extracted under some given ordering. Classical
+== Background and Motivation -- @EDF:lo Scheduling
+<sec:background>
+@PQ:pla are the cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
+priority queues, elements are allowed to be extracted under some given ordering. Classical
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
-For the purpose of @EDF scheduling, we seek a priority queue implementation with the following
-properties:
+We consider an @EDF kernel where arriving tasks are signalled to an interrupt handler, assigned to
+the maximum system priority. This interrupt handler may then either dispatch the task to run on a
+lower priority handler, or enqueue the task in a priority queue for later retrieval and execution.
+Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
+following properties:
 
 - Support for concurrent access from multiple execution contexts (e.g., threads or interrupts
   handlers).
-- Bounded blocking times for concurrent access, ideally with constant time $O(1)$ upper bounds.
+- Bounded blocking times for concurrent access, with constant time $O(1)$ upper bounds.
 - Implementation should not depend on dynamic memory allocations, and should be resource efficient
   in terms of both memory and CPU usage.
 
+== Contributions
 
-== In-place Priority Queue Approach
+#hl[Key contributions are [...]]
+
+= In-place Priority Queue Approach
 
 In the following we sketch the design and implementation of an in-place priority queue in Rust, and
 discuss design decisions in regards to aforementioned requirements.
