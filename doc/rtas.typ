@@ -37,7 +37,7 @@
 #set math.equation(numbering: "(1)")
 
 #show: ieee.with(
-  title: [Work in Progress: A Concurrent Priroity Queue with Constant-Time Blocking],
+  title: [Work in Progress: A Concurrent Priority Queue with Constant-Time Blocking],
 
   abstract: [
     In @DP scheduling, kernels generally rely on priority queues to select the task to be executed.
@@ -82,11 +82,9 @@
 )
 
 = Introduction
-@PQ:pla find many applications in software systems, including real-time scheduling, event
+There exists many applications based on @PQ:pla, including real-time scheduling, event
 management, and graph algorithms. In embedded and real-time systems, @DP scheduler kernel
-implementations typically rely on @PQ:pla to store incoming tasks and retrieve the highest priority
-task to be executed. These data structures are challenging to implement correctly and efficiently in
-a concurrent environment; they have therefore been an area of extensive research.
+implementations typically rely on @PQ:pla to manage incoming task arrivals and retrieve the highest priority task to be executed. These data structures are challenging to implement correctly and efficiently in a concurrent environment; they have therefore been an area of extensive research.
 
 One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing
 concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On
@@ -103,16 +101,13 @@ such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrol
 Other implementations use skip-lists and randomized access to amortize asymptotic time complexite
 @sundellFastLockfreeConcurrent2003. While not a PQ, in
 @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
-node manipulations also based on @CAS operations. These operations are however faillible; making
-such an implementation for a scheduler kernel, where retrying operations can lead to unbounded
-execution time.
+node manipulations also based on @CAS operations. These operations are however fallible; thus unsuitable for hard real-time kernel implementations, as the worst case blocking time is unbounded.
 
 // Rust, with its strong emphasis on memory safety and concurrency, offers a promising platform for
 // implementing safety, security, and timing critical systems.
 
-In this paper we will explore opportunities and challenges involved towards a thread-safe, in-place
-priority queue implementation. We strive to provide constant upper bounds on blocking times in
-concurrent settings.
+In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds on blocking times targeting single core @COTS hardware.
+
 
 
 
