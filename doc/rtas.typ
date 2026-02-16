@@ -115,13 +115,14 @@ on blocking times targeting single core @COTS hardware.
 priority queues, elements are allowed to be extracted under some given ordering. Classical
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
-We consider an @EDF kernel where arriving tasks are signalled to an interrupt handler, assigned to
-the maximum system priority. This interrupt handler may then either dispatch the task to run on a
-lower priority handler, or enqueue the task in a priority queue for later retrieval and execution
-(@fig:arrival-handler). As tasks complete execution on their dispatch handlers, they may extract and
-dispatch a new task from the priority queue, if the latter's absolute deadline is smaller than the
-currently executing task. Therefore, for the purpose of @EDF scheduling, we seek a priority queue
-implementation with the following properties:
+We consider an @EDF kernel where arriving tasks $J_i$ are signalled to an interrupt handler, which
+is assigned the maximum system priority. This interrupt handler captures the task's arrival
+timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue
+the task in a priority queue for later retrieval and execution (@fig:arrival-handler). As tasks
+complete execution on their dispatch handlers $D_i$, they may extract and dispatch a new task from
+the priority queue, if the latter's absolute deadline is smaller than the currently executing task.
+Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
+following properties:
 
 - Support for concurrent access from multiple execution contexts (e.g., threads or interrupts
   handlers).
