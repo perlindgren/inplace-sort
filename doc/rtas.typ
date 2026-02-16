@@ -144,6 +144,13 @@ following properties:
 )
 <fig:interrupt-handler>
 
+#figure(
+  placement: auto,
+  image("../build/figs/extractMin.pdf", width: 100%),
+  caption: [Extraction of the minimum element from the priority queue.],
+)
+<fig:extract-min>
+
 // == Contributions
 
 // #hl[Key contributions are [...]]
