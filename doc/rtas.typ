@@ -43,12 +43,12 @@
     In @DP scheduling, kernels generally rely on priority queues to select the task to be executed.
     The choice of queue implementation introduces tradeoffs with respect to software overhead,
     memory usage and blocking times. A key consideration is thread-safety and memory safety. In this
-    short paper, we sketch an unsorted, thread-safe in-place priority queue allowing an $O(1)$ upper
-    bound on inferred blocking, as well as $O(1)$ `insert`, $O(1)$ `min` and $O(N)$ `extractMin`
-    operations. The queue is implemented as a linked list backed by a fixed-size array, and can be
-    allocated either statically, on the heap or on the stack. Potential applications include
-    real-time scheduling, event management, and graph algorithms where predictable and minimal
-    blocking times are paramount.
+    short paper, we sketch an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$
+    upper bound on inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and
+    $cal(O)(N)$ `extractMin` operations. The queue is implemented as a linked list backed by a
+    fixed-size array, and can be allocated either statically, on the heap or on the stack. Potential
+    applications include real-time scheduling, event management, and graph algorithms where
+    predictable and minimal blocking times are paramount.
   ],
   authors: (
     (
@@ -96,8 +96,8 @@ jitter are generally dependent on the length of the _longest_ critical section i
 is therefore of interest to limit locks to a strict minimum.
 
 Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure
-presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $O(log(log(N)))$ `insert` and
-$O(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed
+presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert`
+and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed
 infaillible; resource-limited embedded systems rarely implement truly infaillible @CAS operations,
 such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm.
 Other implementations use skip-lists and randomized access to amortize asymptotic time complexite
@@ -166,7 +166,7 @@ implementation with the following properties:
 
 - Support for concurrent access from multiple execution contexts (e.g., threads or interrupts
   handlers).
-- Bounded blocking times for concurrent access, with constant time $O(1)$ upper bounds.
+- Bounded blocking times for concurrent access, with constant time $cal(O)(1)$ upper bounds.
 - Implementation should not depend on dynamic memory allocations, and should be resource efficient
   in terms of both memory and CPU usage.
 
@@ -322,15 +322,15 @@ in a well defined manner.
 
 As mentioned in the background section, we can use the `critical-section` crate to provide mutual
 exclusion for our API operations. However, for our implementation the `insert` operation would block
-for $O(n)$ (insertion sort is linear time). While bounded, the excessive blocking is undesirable in
-a real-time context. The problem can be somewhat mitigated by more efficient implementations, e.g.,
-the $o(k* log_2 n)$ binary heap. However, with the increased implementation complexity the constant
-factor $k$ can be significant, and the blocking time can still be excessive for real-time
-applications.
+for $cal(O)(n)$ (insertion sort is linear time). While bounded, the excessive blocking is
+undesirable in a real-time context. The problem can be somewhat mitigated by more efficient
+implementations, e.g., the $cal(O)(k* log_2 n)$ binary heap. However, with the increased
+implementation complexity the constant factor $k$ can be significant, and the blocking time can
+still be excessive for real-time applications.
 
 Instead we propose an extension to the critical section abstraction, where we can define preemption
 points within the critical section. While not entirely *lock-free*, we can reduced the worst case
-blocking time to a constant $O(1)$.
+blocking time to a constant $cal(O)(1)$.
 
 === Preemption Point trait
 
@@ -363,7 +363,7 @@ implementation can safely, exit with interrupts disabled, on return.
 
 Focusing on the `insert` operation, we can define a preemption point after each iteration of the
 search loop, as illustrated in @fig:pq_insert_preemption. This allows other threads to access the
-queue between iterations, and thus reduces the worst case blocking time to $O(1)$.
+queue between iterations, and thus reduces the worst case blocking time to $cal(O)(1)$.
 
 #figure(
   placement: none,
