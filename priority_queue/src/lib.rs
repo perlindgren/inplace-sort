@@ -1,17 +1,20 @@
-// #![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![allow(static_mut_refs)]
-use core::mem::MaybeUninit;
-use std::num::NonZeroU16;
 
-mod mock_cs;
+use core::num::NonZeroU16;
+
+pub(crate) mod mock_cs;
 use mock_cs::{CsSingleCore, CsToken, PreemptionPoint};
 
-// Helper trait
-trait AsUsize {
+pub(crate) mod node;
+use node::*;
+
+/// Helper trait to convert a [`NonZeroU16`] into a [`usize`]
+trait ToUsize {
     fn to_usize(self) -> usize;
 }
 
-impl AsUsize for NonZeroU16 {
+impl ToUsize for NonZeroU16 {
     #[inline(always)]
     fn to_usize(self) -> usize {
         self.get() as usize
@@ -23,19 +26,19 @@ pub enum Error {
     QueueFull,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct PriorityQueue<T, const N: usize>
 where
-    T: Copy + Clone + PartialOrd,
+    T: Clone + Copy,
 {
-    data: [(MaybeUninit<T>, Option<NonZeroU16>); N],
+    data: [Node<T>; N],
     // head: Option<u16>,
     // free: Option<u16>,
 }
 
 impl<T, const N: usize> Default for PriorityQueue<T, N>
 where
-    T: Copy + Clone + PartialOrd,
+    T: PartialOrd + Clone + Copy,
 {
     fn default() -> Self {
         Self::new()
@@ -44,32 +47,32 @@ where
 
 impl<T, const N: usize> PriorityQueue<T, N>
 where
-    T: Copy + Clone + PartialOrd,
+    T: PartialOrd + Clone + Copy,
 {
     #[inline(always)]
-    const fn head(&self) -> Option<NonZeroU16> {
-        self.data[0].1
+    const fn head(&self) -> NodePtr {
+        self.data[0].ptr
     }
 
     #[inline(always)]
-    const fn set_head(&mut self, head: Option<NonZeroU16>) {
-        self.data[0].1 = head;
+    const fn set_head(&mut self, head: NodePtr) {
+        self.data[0].ptr = head;
     }
 
     #[inline(always)]
-    const fn free(&self) -> Option<NonZeroU16> {
-        self.data[1].1
+    const fn free(&self) -> NodePtr {
+        self.data[1].ptr
     }
 
     #[inline(always)]
-    const fn set_free(&mut self, free: Option<NonZeroU16>) {
-        self.data[1].1 = free;
+    const fn set_free(&mut self, free: NodePtr) {
+        self.data[1].ptr = free;
     }
 
     #[inline(always)]
     pub const fn new() -> Self {
         let mut pq = Self {
-            data: [(MaybeUninit::uninit(), None); N],
+            data: [const { Node::new_empty() }; N],
         };
 
         // initialize head
@@ -81,7 +84,7 @@ where
         // It's stupid we can't use for loops in const fns :(
         let mut i = 2;
         while i < N {
-            pq.data[i].1 = if i < N - 1 {
+            pq.data[i].ptr = if i < N - 1 {
                 NonZeroU16::new(i as u16 + 1)
             } else {
                 None
@@ -94,36 +97,50 @@ where
 
     #[inline(always)]
     pub fn pop(&mut self) -> Option<T> {
-        if let Some(i) = self.head() {
-            let (value, next) = self.data[i.to_usize()];
-            self.set_head(next); // update head 
-            println!("next {:?}", self.head());
-            self.data[i.to_usize()].1 = self.free(); // update free list
+        // Return None directly if list is empty
+        let i = self.head()?;
 
-            self.set_free(Some(i));
-            println!("free {:?}", self.free());
+        // SAFETY: no need to check, we already verified list isn't empty
+        let node = self.data[i.to_usize()];
+        let next = node.ptr;
 
-            Some(unsafe { value.assume_init() })
-        } else {
-            None
-        }
+        // Update head
+        self.set_head(next);
+
+        #[cfg(feature = "std")]
+        println!("next {:?}", self.head());
+
+        // Update free list
+        self.data[i.to_usize()].ptr = self.free();
+        self.set_free(Some(i));
+
+        #[cfg(feature = "std")]
+        println!("free {:?}", self.free());
+
+        Some(unsafe { node.data.assume_init() })
     }
 
     #[inline(always)]
     unsafe fn peek_at(&self, index: NonZeroU16) -> T {
-        unsafe { self.data[index.to_usize()].0.assume_init() }
+        unsafe { self.data[index.to_usize()].data.assume_init() }
     }
 
+    // TODO: this should be lock-protected?
     #[inline(always)]
     pub fn peek(&self) -> Option<T> {
         self.head().map(|i| unsafe { self.peek_at(i) })
     }
 
     #[inline(always)]
-    fn insert_first(&mut self, value: T, free_index: NonZeroU16, next: Option<NonZeroU16>) {
-        self.set_free(self.data[free_index.to_usize()].1); // allocated new node from free list
-        self.data[free_index.to_usize()] = (MaybeUninit::new(value), next); // Last node
-        self.set_head(Some(free_index)); // Update head to new node
+    fn insert_first(&mut self, value: T, free_index: NonZeroU16, next: NodePtr) {
+        // Allocated new node from free list
+        self.set_free(self.data[free_index.to_usize()].ptr);
+
+        // Last node
+        self.data[free_index.to_usize()] = Node::new(value, next);
+
+        // Update head to new node
+        self.set_head(Some(free_index));
     }
 
     #[inline(always)]
@@ -132,11 +149,17 @@ where
         value: T,
         prev_index: NonZeroU16,
         free_index: NonZeroU16,
-        next: Option<NonZeroU16>,
+        next: NodePtr,
     ) -> Result<(), Error> {
-        self.set_free(self.data[free_index.to_usize()].1); // allocated new node from free list
-        self.data[free_index.to_usize()] = (MaybeUninit::new(value), next); // Last node
-        self.data[prev_index.to_usize()].1 = Some(free_index); // Update previous node to new node
+        // Allocated new node from free list
+        self.set_free(self.data[free_index.to_usize()].ptr);
+
+        // Last node
+        self.data[free_index.to_usize()] = Node::new(value, next);
+
+        // Update previous node to new node
+        self.data[prev_index.to_usize()].ptr = Some(free_index);
+
         Ok(())
     }
 
@@ -168,7 +191,7 @@ where
             let cs = CsToken;
             loop {
                 // check if last node
-                match self.data[prev_index.to_usize()].1 {
+                match self.data[prev_index.to_usize()].ptr {
                     None => {
                         // we reached the end of the list, insert at the end
                         return self.insert_at(value, prev_index, free_index, None);
@@ -184,14 +207,15 @@ where
                         }
                     }
                 }
+                // TODO: what happens if the node at next_index gets popped inside the yield point?
                 CsSingleCore::preemption_point(&cs);
             }
         }
     }
 }
 
-unsafe impl<T: Copy + Clone + PartialOrd, const N: usize> Send for PriorityQueue<T, N> {}
-unsafe impl<T: Copy + Clone + PartialOrd, const N: usize> Sync for PriorityQueue<T, N> {}
+unsafe impl<T: Copy + Clone, const N: usize> Send for PriorityQueue<T, N> {}
+unsafe impl<T: Copy + Clone, const N: usize> Sync for PriorityQueue<T, N> {}
 
 #[cfg(test)]
 mod tests {
@@ -201,19 +225,21 @@ mod tests {
     fn test_new() {
         let pq = PriorityQueue::<i32, 5>::new();
         println!("{:?}", pq);
-        assert_eq!(pq.data[0].1, None);
-        assert_eq!(pq.data[1].1, NonZeroU16::new(2));
+        assert_eq!(pq.data[0].ptr, None);
+        assert_eq!(pq.data[1].ptr, NonZeroU16::new(2));
     }
 
     #[test]
     fn test_pop() {
         let mut pq = PriorityQueue::<i32, 5> {
             data: [
-                (MaybeUninit::uninit(), NonZeroU16::new(2)),
-                (MaybeUninit::uninit(), None),
-                (MaybeUninit::new(1), NonZeroU16::new(3)),
-                (MaybeUninit::new(2), NonZeroU16::new(4)),
-                (MaybeUninit::new(3), None),
+                // Head
+                Node::new_uninit(NonZeroU16::new(2)),
+                // Free
+                Node::new_uninit(None),
+                Node::new(1, NonZeroU16::new(3)),
+                Node::new(2, NonZeroU16::new(4)),
+                Node::new(3, None),
             ],
             //         head: NonZeroU16::new(0),
             //         free: None,
