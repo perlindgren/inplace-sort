@@ -1,12 +1,14 @@
 // #![cfg_attr(not(test), no_std)]
 #![allow(static_mut_refs)]
+
+use core::cell::Cell;
 use core::mem::MaybeUninit;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct PriorityQueue<const N: usize, T: Copy + Clone + PartialOrd> {
     data: [(MaybeUninit<T>, Option<u16>); N],
-    // head: Option<u16>,
-    // free: Option<u16>,
+    #[allow(dead_code)]
+    prev: Cell<Option<u16>>,
 }
 
 struct CsToken;
@@ -17,10 +19,15 @@ trait PreemptionPoint: CriticalSection {
     fn preemption_point(cs: &CsToken);
 }
 
-struct cs_single_core;
+struct CsSingleCore;
 
-impl CriticalSection for cs_single_core {}
-impl PreemptionPoint for cs_single_core {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Error {
+    QueueFull,
+}
+
+impl CriticalSection for CsSingleCore {}
+impl PreemptionPoint for CsSingleCore {
     #[inline(always)]
     fn preemption_point(_cs: &CsToken) {
         // no-op
@@ -47,10 +54,12 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
         self.data[1].1 = free;
     }
 
+    #[allow(clippy::new_without_default)]
     #[inline(always)]
     pub const fn new() -> Self {
         let mut pq = Self {
             data: [(MaybeUninit::uninit(), None); N],
+            prev: Cell::new(None),
         };
 
         // initialize head
@@ -95,6 +104,7 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
         unsafe { self.data[index as usize].0.assume_init() }
     }
 
+    #[allow(clippy::manual_map)]
     #[inline(always)]
     pub fn peek(&self) -> Option<T> {
         if let Some(i) = self.head() {
@@ -118,15 +128,16 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
         prev_index: u16,
         free_index: u16,
         next: Option<u16>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), Error> {
         self.set_free(self.data[free_index as usize].1); // allocated new node from free list
         self.data[free_index as usize] = (MaybeUninit::new(value), next); // Last node
         self.data[prev_index as usize].1 = Some(free_index); // Update previous node to new node
         Ok(())
     }
 
+    #[allow(clippy::result_unit_err)]
     #[inline(always)]
-    pub fn insert(&mut self, value: T) -> Result<(), ()> {
+    pub fn insert(&mut self, value: T) -> Result<(), Error> {
         // check if free list is not empty
         if let Some(free_index) = self.free() {
             // check if list is not empty
@@ -134,7 +145,9 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
                 // list is not empty, find correct position to insert
                 if value < self.peek().unwrap() {
                     // less then first element
-                    return Ok(self.insert_first(value, free_index, Some(head_index)));
+                    self.insert_first(value, free_index, Some(head_index));
+                    #[allow(clippy::needless_return)]
+                    return Ok(());
                 } else {
                     // find the correct position to insert
                     let mut prev_index = head_index;
@@ -163,15 +176,17 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
                                 }
                             }
                         }
-                        cs_single_core::preemption_point(&cs);
+                        CsSingleCore::preemption_point(&cs);
                     }
                 }
             } else {
                 // list is empty, insert first node
-                return Ok(self.insert_first(value, free_index, None));
+                self.insert_first(value, free_index, None);
+                #[allow(clippy::needless_return)]
+                return Ok(());
             }
         } else {
-            Err(())
+            Err(Error::QueueFull)
         }
     }
 }
@@ -200,8 +215,7 @@ mod tests {
                 (MaybeUninit::new(2), Some(4)),
                 (MaybeUninit::new(3), None),
             ],
-            //         head: Some(0),
-            //         free: None,
+            prev: Cell::new(None),
         };
 
         println!("{:?}", pq);
@@ -236,7 +250,7 @@ mod tests {
             assert_eq!(PQ.insert(1), Ok(()));
             println!("{:?}", PQ);
             assert_eq!(PQ.peek(), Some(1));
-            assert_eq!(PQ.insert(0), Err(()));
+            assert_eq!(PQ.insert(0), Err(Error::QueueFull));
             println!("{:?}", PQ);
 
             assert_eq!(PQ.pop(), Some(1));
