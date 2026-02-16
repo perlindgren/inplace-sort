@@ -4,12 +4,12 @@ use core::num::NonZeroU16;
 pub(crate) type NodePtr = Option<NonZeroU16>;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Node<T: Clone + Copy> {
+pub(crate) struct Node<T: Copy> {
     pub data: MaybeUninit<T>,
     pub ptr: NodePtr,
 }
 
-impl<T: Clone + Copy> Node<T> {
+impl<T: Copy> Node<T> {
     #[inline]
     pub const fn new(data: T, ptr: NodePtr) -> Self {
         Self {

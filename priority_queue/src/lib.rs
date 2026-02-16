@@ -29,7 +29,7 @@ pub enum Error {
 #[derive(Debug)]
 pub struct PriorityQueue<T, const N: usize>
 where
-    T: Clone + Copy,
+    T: PartialOrd + Copy,
 {
     data: [Node<T>; N],
     // head: Option<u16>,
@@ -38,7 +38,7 @@ where
 
 impl<T, const N: usize> Default for PriorityQueue<T, N>
 where
-    T: PartialOrd + Clone + Copy,
+    T: PartialOrd + Copy,
 {
     fn default() -> Self {
         Self::new()
@@ -47,7 +47,7 @@ where
 
 impl<T, const N: usize> PriorityQueue<T, N>
 where
-    T: PartialOrd + Clone + Copy,
+    T: PartialOrd + Copy,
 {
     #[inline(always)]
     const fn head(&self) -> NodePtr {
@@ -214,8 +214,8 @@ where
     }
 }
 
-unsafe impl<T: Copy + Clone, const N: usize> Send for PriorityQueue<T, N> {}
-unsafe impl<T: Copy + Clone, const N: usize> Sync for PriorityQueue<T, N> {}
+unsafe impl<T: PartialOrd + Copy, const N: usize> Send for PriorityQueue<T, N> {}
+unsafe impl<T: PartialOrd + Copy, const N: usize> Sync for PriorityQueue<T, N> {}
 
 #[cfg(test)]
 mod tests {
