@@ -136,6 +136,13 @@ implementation with the following properties:
 )
 <fig:arrival-handler>
 
+#figure(
+  placement: auto,
+  image("../build/figs/interrupt.pdf", width: 70%),
+  caption: [Arrival and dispatch handlers sorted by preemption level. Arrival handlers are assigned higher priority to minimize time-stamp jitter.],
+)
+<fig:interrupt-handler>
+
 // == Contributions
 
 // #hl[Key contributions are [...]]
