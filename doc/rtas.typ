@@ -101,10 +101,13 @@ and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operatio
 infallible; resource-limited embedded systems rarely implement truly infallible @CAS operations,
 such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm.
 Other implementations use skip-lists and randomized access to amortize asymptotic time complexity
-@sundellFastLockfreeConcurrent2003. While not a PQ, in
+@sundellFastLockfreeConcurrent2003. Some work has also gone into limiting a @PQ's I/O operations
+between an internal cache and external memory, while retaining a favorable amortized time complexity
+for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a PQ, in
 @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
 node manipulations also based on @CAS operations. These operations are however fallible, and thus
 unsuitable for hard real-time kernel implementations, as the worst case blocking time is unbounded.
+
 
 In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds
 on blocking times targeting single core @COTS hardware.
@@ -115,12 +118,18 @@ on blocking times targeting single core @COTS hardware.
 priority queues, elements are allowed to be extracted under some given ordering. Classical
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
-We consider an @EDF kernel where arriving tasks $J_i$ are signalled to an interrupt handler, which
-is assigned the maximum system priority. This interrupt handler captures the task's arrival
-timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue
-the task in a priority queue for later retrieval and execution (@fig:arrival-handler). As tasks
-complete execution on their dispatch handlers $D_i$, they may extract and dispatch a new task from
-the priority queue, if the latter's absolute deadline is smaller than the currently executing task.
+We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt
+handlers:
++ They are first signalled to an arrival handler $A_i$, which is assigned the maximum system
+  priority. This handler captures the task's arrival timestamp `TS`, and may then either dispatch
+  the task to run on a lower priority handler, or enqueue the task in a priority queue for later
+  retrieval and execution (@fig:arrival-handler).
++ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when the
+  dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch
+  handler runs a cleanup routine before returning. If the `min(PQ)` has an absolute deadline which
+  is shorter than the next task to execute's deadline, then the highest priority task is extracted
+  from `PQ` and dispatched (@fig:interrupt-handler).
+
 Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
 following properties:
 
@@ -133,14 +142,15 @@ following properties:
 #figure(
   placement: auto,
   image("../build/figs/arrival_handler.pdf", width: 35%),
-  caption: [Example implementation of an @EDF arrival handler],
+  caption: [Example implementation of an @EDF arrival handler $A_i$.],
 )
 <fig:arrival-handler>
 
 #figure(
   placement: auto,
   image("../build/figs/interrupt.pdf", width: 70%),
-  caption: [Arrival and dispatch handlers sorted by preemption level. Arrival handlers are assigned higher priority to minimize time-stamp jitter.],
+  caption: [Arrival and dispatch handlers sorted by preemption level. Arrival handlers are assigned
+    higher priorities to minimize time-stamp jitter.],
 )
 <fig:interrupt-handler>
 
@@ -187,6 +197,17 @@ discuss design decisions in regards to aforementioned requirements.
 //   caption: [Example 1. TTA Scheduling example of three periodic tasks, non-preemptively scheduled under EDF.],
 // ) <fig:tta_ex1>
 
+= Conclusions
+
+== Future work
+
+Opportunities to expand and improve this work are plentiful. In particular, we strive to:
+
+- Elaborate a full implementation, as an open-source library in the Rust systems programming
+  language;
+- Provide a formal proof of correctness and memory safety;
+- Integrate the @PQ implementation in an @EDF scheduler to evaluate its performance and real-time
+  properties.
 
 
 
