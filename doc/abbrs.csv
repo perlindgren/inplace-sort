@@ -1,0 +1,16 @@
+NVIC,Nested Vector Interrupt Controller
+WCET,worst-case execution time
+EDF,Earliest Deadline First
+COTS,"commercial, off-the-shelf"
+SRP,Stack Resource Policy
+RM,Rate-Monotonic
+FP,fixed priority
+DP,dynamic priority
+RTOS,real-time operating system,RTOSs
+CLIC,Core-Local Interrupt Controller
+RTIC,Real-Time Interrupt Concurrency
+DSL,domain-specific language
+HW,hardware
+SW,software
+FIFO,"first-in, first-out"
+UB,undefined behaviour
