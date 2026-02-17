@@ -90,10 +90,9 @@ have therefore been an area of extensive research.
 
 One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing
 concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On
-single-core systems, these locks are typically implemented as critical sections--i.e., a section of
-code which executes with interrupts disabled. However, schedulability criteria and task execution
+single-core systems, these locks are typically implemented as critical sections where the lock-region executes with interrupts disabled. However, schedulability criteria and task execution
 jitter are generally dependent on the length of the _longest_ critical section in a given system; it
-is therefore of interest to limit locks to a strict minimum.
+is therefore of interest to limit worst-case lock duration to a strict minimum.
 
 Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure
 presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert`
@@ -105,13 +104,11 @@ Other implementations use skip-lists and randomized access to amortize asymptoti
 between an internal cache and external memory, while retaining a favorable amortized time complexity
 for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a PQ, in
 @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
-node manipulations also based on @CAS operations. These operations are however fallible, and thus
-unsuitable for hard real-time kernel implementations, as the worst case blocking time is unbounded
-when accounting for retried operations.
+node manipulations also based on @CAS operations. We however deem these approaches unsuitable for hard real-time kernel implementations targeting single-core @COTS hardware, as the worst case blocking time is unbounded when accounting for retried operations.
 
 
 In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds
-on blocking times targeting single-core @COTS hardware.
+on blocking times. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
 == Background and Motivation -- @EDF:lo Scheduling
 <sec:background>
@@ -121,15 +118,9 @@ implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairi
 
 We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt
 handlers:
-+ They are first signalled to an arrival handler $A_i$, which is assigned the maximum system
-  priority. This handler captures the task's arrival timestamp `TS`, and may then either dispatch
-  the task to run on a lower priority handler, or enqueue the task in a priority queue for later
-  retrieval and execution (@fig:arrival-handler).
-+ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when the
-  dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch
-  handler runs a cleanup routine before returning. If `min(PQ)` has an absolute deadline which is
-  shorter than the next task to execute's deadline, then the highest priority task is extracted from
-  `PQ` and dispatched (@fig:interrupt-handler).
++ They are first signalled to an arrival handler $A_i$. This handler captures the task's arrival timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue the task in a priority queue for later retrieval and execution (@fig:arrival-handler and @fig:interrupt-handler top).
++ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch handler take as scheduling decision. If `min(PQ)` has an absolute deadline which is shorter than the next task to execute's deadline, then the highest priority task is extracted from `extractMin(PQ)` and dispatched (@fig:interrupt-handler bottom).
++ The priority of arrival and dispatch handlers is determined according to relative task deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize time-stamp jitter.
 
 Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
 following properties:
@@ -213,7 +204,7 @@ complete, thus the resumed _extractMin_ can immediately return without additiona
 queue is therefore intended for single-core systems, where only a single task may execute at any
 given time, and it is therefore unnecessary to attempt to dispatch multiple tasks simultaneously.
 
-This ensures that the amortized work for _extractMin_ of each enqueued element is $cal(O)(N)$.
+The restart-free implementation ensures that the amortized work for _extractMin_ of each enqueued element is $cal(O)(N)$.
 
 == Dispatcher Design
 
@@ -221,37 +212,11 @@ By performing the _extractMin_ operation at the level of the currently highest p
 ensure that the task dispatch latency is free of priority inversion, and the currently most urgent
 task isn't blocked by queue operations from lower priority dispatch handlers.
 
-// #figure(
-//   table(
-//     // Table styling is not mandated by the IEEE. Feel free to adjust these
-//     // settings and potentially move them into a set rule.
-//     columns: (auto, auto, auto),
-//     align: (auto, auto, auto),
-//     inset: (x: 8pt, y: 4pt),
-//     stroke: (x, y) => if y <= 1 { (top: 0.5pt) },
-//     //fill: (x, y) => if y > 0 and calc.rem(y, 2) == 0 { rgb("#efefef") },
-
-//     table.header([Task], [Period ms], [WCET ms]),
-
-//     [Task1], [40], [10],
-//     [Task2], [60], [15],
-//     [Task3], [80], [20],
-//   ),
-//   caption: [Example 1. System with three periodic tasks without resource sharing.],
-//   placement: none,
-// ) <tab:example1>
-
-// #figure(
-//   placement: none,
-//   image("../tta_ex1.drawio.svg"),
-//   caption: [Example 1. TTA Scheduling example of three periodic tasks, non-preemptively scheduled under EDF.],
-// ) <fig:tta_ex1>
-
 = Conclusions
 
 In this short paper we have sketched a concurrent priority queue implementation, and argued constant
 time blocking times for all operations. The in-place designs allows for efficient memory usage and
-static allocation, meeting our requirements for real-time scheduling applications.
+static allocation, meeting our requirements for hard real-time scheduling applications.
 
 == Future work
 
