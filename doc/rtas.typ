@@ -150,7 +150,7 @@ following properties:
   placement: auto,
   image("../build/figs/extractMin.pdf", width: 100%),
   caption: [Extraction of the minimum element from the priority queue, with 3 concurrent readers and
-    a writer protected by a critical section.],
+    a writer protected by a (global)critical section.],
 )
 <fig:extract-min>
 
