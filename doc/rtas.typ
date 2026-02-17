@@ -222,7 +222,7 @@ static allocation, meeting our requirements for hard real-time scheduling applic
 
 In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy @128747
 based @EDF scheduler. For the implementation, we intend to leverage on the Rust language for
-zero-cost abstractions, provide safe APIs for inherently unsafe operations, and characterize the blocking factors and overhead. Furthermore, we aim to explore and hardware-assisted interrupt time-stamping, and study the practical effects of jitter minimization to scheduling performance.
+zero-cost abstractions, provide safe APIs for inherently unsafe operations, and characterize the blocking factors and overhead. Furthermore, we aim to explore hardware-assisted interrupt time-stamping and study the practical effects of obtained jitter minimization to scheduling performance.
 
 
 
