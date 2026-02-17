@@ -112,7 +112,7 @@ on blocking times. Our approach is based on mutual-exclusion implemented as inte
 
 == Background and Motivation -- @EDF:lo Scheduling
 <sec:background>
-@PQ:pla are the cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
+@PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
 priority queues, elements are allowed to be extracted under some given ordering. Classical
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
