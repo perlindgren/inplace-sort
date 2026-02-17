@@ -216,13 +216,13 @@ task isn't blocked by queue operations from lower priority dispatch handlers.
 
 In this short paper we have sketched a concurrent priority queue implementation, and argued constant
 time blocking times for all operations. The in-place designs allows for efficient memory usage and
-static allocation, meeting our requirements for hard real-time scheduling applications.
+static allocation, meeting our requirements for hard real-time scheduling applications. While priority queues using unsorted in-place array-based linked lists are well understood, the novelty here resides with the simplistic concurrent design, matching concrete requirements for hard-real time scheduling on single-core @COTS hardware.
 
 == Future work
 
-In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy
+In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy @128747
 based @EDF scheduler. For the implementation, we intend to leverage on the Rust language for
-zero-cost abstractions, and provide safe APIs for inherently unsafe operations.
+zero-cost abstractions, provide safe APIs for inherently unsafe operations, and characterize the blocking factors and overhead. Furthermore, we aim to explore and hardware-assisted interrupt time-stamping, and study the practical effects of jitter minimization to scheduling performance.
 
 
 
