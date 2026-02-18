@@ -3,11 +3,31 @@
 
 use core::mem::MaybeUninit;
 
+use std::fmt;
+use std::fmt::Debug;
+
+// Reserved queue elements:
+// index 0: head index
+// index 1: free list head index
+// index 2: last node index
 #[derive(Debug)]
-pub struct PriorityQueue<const N: usize, T: Copy + Clone + PartialOrd> {
-    prev: u16, // index to prev node
+pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
     data: [MaybeUninit<T>; N],
     next: [Option<u16>; N],
+    head: Option<u16>,
+    tail: Option<u16>,
+    free: Option<u16>,
+}
+
+impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> fmt::Display for PriorityQueue<N, T> {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "head {:?}, tail {:?}, free {:?}, next {:?}",
+            self.head, self.tail, self.free, self.next
+        )
+    }
 }
 
 struct CsToken;
@@ -39,43 +59,19 @@ pub enum MockTest {
     Pop,
 }
 
-impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
-    #[inline(always)]
-    const fn head(&self) -> Option<u16> {
-        self.next[0]
-    }
-
-    #[inline(always)]
-    const fn set_head(&mut self, head: Option<u16>) {
-        self.next[0] = head;
-    }
-
-    #[inline(always)]
-    const fn free(&self) -> Option<u16> {
-        self.next[1]
-    }
-
-    #[inline(always)]
-    const fn set_free(&mut self, free: Option<u16>) {
-        self.next[1] = free;
-    }
-
+impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     #[allow(clippy::new_without_default)]
     #[inline(always)]
     pub const fn new() -> Self {
         let mut pq = Self {
             data: [MaybeUninit::uninit(); N],
             next: [None; N],
-            prev: 0,
+            head: None,
+            tail: None,
+            free: Some(0),
         };
 
-        // initialize head
-        pq.set_head(None);
-
-        // initialize free list
-        pq.set_free(Some(2));
-
-        let mut i = 2;
+        let mut i = 0;
 
         while i < N {
             pq.next[i] = if i < N - 1 {
@@ -90,244 +86,120 @@ impl<const N: usize, T: Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     }
 
     #[inline(always)]
-    pub fn pop(&mut self) -> Option<T> {
-        if let Some(i) = self.head() {
-            let next = self.next[i as usize];
-            self.set_head(next); // update head 
-            // println!("next {:?}", self.head());
-            self.next[i as usize] = self.free(); // update free list
+    pub fn extractMin(&mut self) -> Option<T> {
+        let head_index = self.head?;
+        let mut min_value = unsafe { self.data[head_index as usize].assume_init() };
+        let mut cursor = 0; // start from the head node
+        let mut min_cursor = cursor;
 
-            self.set_free(Some(i));
-            // println!("free {:?}", self.free());
+        while let Some(next) = self.next[cursor as usize] {
+            let next_value = unsafe { self.data[next as usize].assume_init() };
+            println!(
+                "cursor {}, value {:?}, next {}, next_value {:?}",
+                cursor, min_value, next, next_value
+            );
 
-            // if head was the prev node, update prev to next of head
-            if self.prev == 0 {
-                self.prev = i; // next of head 
+            if next_value < min_value {
+                min_value = next_value;
+                min_cursor = cursor;
             }
-
-            Some(unsafe { self.data[i as usize].assume_init() })
-        } else {
-            None
+            cursor = next;
         }
+
+        println!("min_value {:?}, min_cursor {}", min_value, min_cursor);
+        // let next_of_min_cursor = self.next[self.next[min_cursor as usize].unwrap() as usize];
+        // // add to free list
+        // self.next[self.next[min_cursor as usize].unwrap() as usize] = self.free();
+        // self.set_free(Some(min_cursor));
+
+        //
+        // self.next[min_cursor as usize] = next_of_min_cursor;
+        // self.set_free(Some(min_cursor));
+        // println!(
+        //     "EM: min_cursor {}, min_value {:?}, next {:?}",
+        //     min_cursor, min_value, next
+        // );
+
+        // self.next[min_cursor as usize] = next; // bypass the min node
+
+        Some(min_value)
     }
 
     #[inline(always)]
-    unsafe fn peek_at(&self, index: u16) -> T {
-        unsafe { self.data[index as usize].assume_init() }
-    }
-
-    #[allow(clippy::manual_map)]
-    #[inline(always)]
-    pub fn peek(&self) -> Option<T> {
-        if let Some(i) = self.head() {
-            Some(unsafe { self.peek_at(i) })
-        } else {
-            None
-        }
-    }
-
-    // Allocate a new new node from the free list and write value to data, return the index of the new node.
-    #[inline(always)]
-    fn allocate_node(&mut self, value: T) -> Result<u16, Error> {
-        let new_index = self.free().ok_or(Error::QueueFull)?;
+    fn insert(&mut self, value: T) -> Result<(), Error> {
+        let new_index = self.free.ok_or(Error::QueueFull)?;
         self.data[new_index as usize] = MaybeUninit::new(value);
-        self.set_free(self.next[new_index as usize]);
-        Ok(new_index)
-    }
-
-    #[inline(always)]
-    fn insert_at(&mut self, value: T, prev_index: u16, next: Option<u16>) -> Result<(), Error> {
-        let new_index = self.allocate_node(value)?; // allocate new node
-        self.next[new_index as usize] = next; // New node points to next node
-        self.next[prev_index as usize] = Some(new_index); // Previous node points to new node
-        Ok(())
-    }
-
-    #[allow(clippy::result_unit_err)]
-    #[inline(always)]
-    pub fn insert(&mut self, value: T, mock: MockTest) -> Result<(), Error> {
-        let mut prev_index = 0; // we start from the head
-
-        loop {
-            if let Some(next_index) = self.next[prev_index as usize] {
-                // smaller than next node,
-                if value < unsafe { self.peek_at(next_index) } {
-                    return self.insert_at(value, prev_index, Some(next_index));
-                } else {
-                    self.prev = prev_index; // update prev to current node
-                    CsSingleCore::preemption_point(&CsToken);
-                    match mock {
-                        MockTest::None => {}
-                        MockTest::Pop => {
-                            println!("-- preempt before pop at index {}", prev_index);
-
-                            self.pop();
-                            println!("-- preempt after pop at index {}", prev_index);
-                        }
-                    }
-                    prev_index = self.prev; // read after preemption point 
-                }
-            } else {
-                // we reached the end of the list, insert at the end
-                return self.insert_at(value, prev_index, None);
-            }
+        self.free = self.next[new_index as usize];
+        self.next[new_index as usize] = None; // new node points to None
+        self.tail = Some(new_index);
+        if self.head.is_none() {
+            self.head = Some(new_index);
         }
+        Ok(())
     }
 }
 
-unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Send for PriorityQueue<S, T> {}
-unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Sync for PriorityQueue<S, T> {}
+// unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Send for PriorityQueue<S, T> {}
+// unsafe impl<const S: usize, T: Copy + Clone + PartialOrd> Sync for PriorityQueue<S, T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_new() {
-        let pq = PriorityQueue::<5, i32>::new();
+        let pq = PriorityQueue::<3, i32>::new();
         println!("{:?}", pq);
-        assert_eq!(pq.head(), None);
-        assert_eq!(pq.free(), Some(2));
+        assert_eq!(pq.head, None);
+        assert_eq!(pq.free, Some(0));
     }
 
     #[test]
-    fn test_pop() {
-        let mut pq = PriorityQueue::<5, i32> {
-            data: [
-                MaybeUninit::uninit(),
-                MaybeUninit::uninit(),
-                MaybeUninit::new(1),
-                MaybeUninit::new(2),
-                MaybeUninit::new(3),
-            ],
-            next: [
-                Some(2), // head
-                None,    // free
-                Some(3),
-                Some(4),
-                None,
-            ],
-            prev: 0,
-        };
-
-        println!("{:?}", pq);
-        assert_eq!(pq.pop(), Some(1));
-        println!("{:?}", pq);
-        assert_eq!(pq.pop(), Some(2));
-        println!("{:?}", pq);
-        assert_eq!(pq.pop(), Some(3));
-        println!("{:?}", pq);
-        assert_eq!(pq.head(), None);
-        assert_eq!(pq.free(), Some(4));
-    }
-
-    #[test]
-    fn test_insert_first() {
+    fn test_insert() {
         unsafe {
-            static mut PQ: PriorityQueue<5, i32> = PriorityQueue::<5, i32>::new();
-            println!("{:?}", PQ);
-            assert_eq!(PQ.head(), None);
-            assert_eq!(PQ.free(), Some(2));
-            assert_eq!(PQ.peek(), None);
+            static mut PQ: PriorityQueue<3, i32> = PriorityQueue::new();
+            println!("{}", PQ);
+            assert_eq!(PQ.head, None);
+            assert_eq!(PQ.tail, None);
+            assert_eq!(PQ.free, Some(0));
+            assert_eq!(PQ.insert(45), Ok(()));
+            println!("insert 45: {}", PQ);
+            assert_eq!(PQ.head, Some(0));
+            assert_eq!(PQ.tail, Some(0));
+            assert_eq!(PQ.free, Some(1));
 
-            assert_eq!(PQ.insert(3, MockTest::None), Ok(()));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.peek(), Some(3));
-            assert_eq!(PQ.head(), Some(2));
-            assert_eq!(PQ.free(), Some(3));
+            assert_eq!(PQ.insert(12), Ok(()));
+            println!("insert 12: {}", PQ);
+            assert_eq!(PQ.head, Some(0));
+            assert_eq!(PQ.tail, Some(0));
+            assert_eq!(PQ.free, Some(1));
 
-            assert_eq!(PQ.insert(2, MockTest::None), Ok(()));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.peek(), Some(2));
-            assert_eq!(PQ.insert(1, MockTest::None), Ok(()));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.peek(), Some(1));
-            assert_eq!(PQ.insert(0, MockTest::None), Err(Error::QueueFull));
-            println!("{:?}", PQ);
+            // println!("{:?}", PQ);
+            // assert_eq!(PQ.head(), Some(3));
+            // assert_eq!(PQ.tail(), Some(4));
 
-            assert_eq!(PQ.pop(), Some(1));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.pop(), Some(2));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.pop(), Some(3));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.head(), None);
-            assert_eq!(PQ.free(), Some(2));
-            assert_eq!(PQ.pop(), None);
+            // assert_eq!(PQ.insert(56), Ok(()));
+            // println!("{:?}", PQ);
+            // assert_eq!(PQ.head(), Some(3));
+            // assert_eq!(PQ.tail(), Some(5));
         }
     }
 
-    #[test]
-    fn test_insert_last() {
-        unsafe {
-            static mut PQ: PriorityQueue<5, i32> = PriorityQueue::<5, i32>::new();
-            println!("{:?}", PQ);
-            assert_eq!(PQ.head(), None);
-            assert_eq!(PQ.free(), Some(2));
-            assert_eq!(PQ.peek(), None);
+    //#[test]
+    // fn test_extract_min() {
+    //     let mut pq = PriorityQueue::<6, i32>::new();
+    //     println!("after init: {}", pq);
+    //     println!("extractMin{:?}", pq.extractMin());
+    //     println!("after extractMin: {}", pq);
+    //     println!("insert 45");
+    //     let _ = pq.insert(45);
+    //     println!("{}", pq);
 
-            assert_eq!(PQ.insert(1, MockTest::None), Ok(()));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.peek(), Some(1));
-            assert_eq!(PQ.head(), Some(2));
-            assert_eq!(PQ.free(), Some(3));
+    //     println!("extractMin");
+    //     println!("extracted {:?}", pq.extractMin());
+    //     // println!("after extractMin: {}", pq);
 
-            assert_eq!(PQ.insert(2, MockTest::None), Ok(()));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.peek(), Some(1));
-            assert_eq!(PQ.insert(3, MockTest::None), Ok(()));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.peek(), Some(1));
-            assert_eq!(PQ.insert(0, MockTest::None), Err(Error::QueueFull));
-            println!("{:?}", PQ);
+    //     // assert_eq!(pq.extractMin(), Some(45));
 
-            assert_eq!(PQ.pop(), Some(1));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.pop(), Some(2));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.pop(), Some(3));
-            println!("{:?}", PQ);
-            assert_eq!(PQ.head(), None);
-            assert_eq!(PQ.free(), Some(2));
-            assert_eq!(PQ.pop(), None);
-        }
-    }
-
-    #[test]
-    fn test_insert_middle() {
-        let mut pq = PriorityQueue::<5, i32>::new();
-        println!("{:?}", pq);
-
-        assert_eq!(pq.insert(2, MockTest::None), Ok(()));
-        println!("{:?}", pq);
-        assert_eq!(pq.peek(), Some(2));
-        assert_eq!(pq.head(), Some(2));
-        assert_eq!(pq.free(), Some(3));
-
-        assert_eq!(pq.insert(4, MockTest::None), Ok(()));
-        println!("{:?}", pq);
-        assert_eq!(pq.peek(), Some(2));
-
-        assert_eq!(pq.insert(3, MockTest::None), Ok(()));
-        println!("{:?}", pq);
-        assert_eq!(pq.pop(), Some(2));
-
-        assert_eq!(pq.pop(), Some(3));
-        println!("{:?}", pq);
-
-        assert_eq!(pq.pop(), Some(4));
-        println!("{:?}", pq);
-    }
-
-    #[test]
-    fn test_preempt_pop() {
-        let mut pq = PriorityQueue::<5, i32>::new();
-        println!("{:?}", pq);
-
-        assert_eq!(pq.insert(1, MockTest::None), Ok(()));
-        assert_eq!(pq.insert(3, MockTest::Pop), Ok(()));
-        println!("{:?}", pq);
-
-        println!("-- pop {:?}", pq.pop());
-        println!("{:?}", pq);
-    }
+    //     // assert_eq!(pq.extractMin(), None);
+    // }
 }
