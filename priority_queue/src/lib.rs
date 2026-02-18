@@ -30,7 +30,9 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> Default for Prior
 unsafe impl<T: PartialOrd, const N: usize> Send for PriorityQueue<T, N> {}
 unsafe impl<T: PartialOrd, const N: usize> Sync for PriorityQueue<T, N> {}
 
-impl<T: core::fmt::Debug + PartialOrd, const N: usize> core::fmt::Debug for PriorityQueue<T, N> {
+impl<T: core::fmt::Debug + PartialOrd + Clone, const N: usize> core::fmt::Debug
+    for PriorityQueue<T, N>
+{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(
             f,
@@ -43,7 +45,7 @@ impl<T: core::fmt::Debug + PartialOrd, const N: usize> core::fmt::Debug for Prio
         for i in 0..N {
             // TODO: the unsafe block here is definitely unsound
             writeln!(f, "\t({i}) {:?}, value: {:?}", self.data[i], unsafe {
-                self.data[i].value.assume_init_ref()
+                self.peek_at(i as u16)
             })?;
 
             // writeln!(f, "\t({i}) {:?}", self.data[i])?;
@@ -57,7 +59,7 @@ impl<T: core::fmt::Debug + PartialOrd, const N: usize> core::fmt::Debug for Prio
                     f,
                     "\t({cursor}) {:?}, value: {:?}",
                     self.data[cursor as usize],
-                    unsafe { self.data[cursor as usize].value.assume_init_ref() }
+                    unsafe { self.peek_at(cursor) }
                 )?;
                 // writeln!(f, "\t({cursor}) {:?}", self.data[cursor as usize])?;
 
@@ -78,7 +80,7 @@ impl<T: core::fmt::Debug + PartialOrd, const N: usize> core::fmt::Debug for Prio
                     f,
                     "\t({cursor}) {:?}, value: {:?}",
                     self.data[cursor as usize],
-                    unsafe { self.data[cursor as usize].value.assume_init_ref() }
+                    unsafe { self.peek_at(cursor) }
                 )?;
                 // writeln!(f, "\t({cursor}) {:?}", self.data[cursor as usize])?;
 
@@ -94,32 +96,60 @@ impl<T: core::fmt::Debug + PartialOrd, const N: usize> core::fmt::Debug for Prio
     }
 }
 
+// TODO: remove Clone bounds
 impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, N> {
+    /// Returns a `&` reference to the node held at the specified index.
+    ///
+    /// # Safety
+    ///
+    /// The following invariants must be held:
+    ///
+    /// * The provided index must be within the backing array's bounds. No runtime checks are performed.
     #[inline]
-    fn peek_at(&self, idx: NodePtr) -> Option<&Node<T>> {
-        self.data.get(idx as usize)
+    unsafe fn node_at(&self, idx: NodePtr) -> &Node<T> {
+        unsafe { self.data.get_unchecked(idx as usize) }
     }
 
+    /// Returns an `&mut` reference to the node held at the specified index.
+    ///
+    /// # Safety
+    ///
+    /// The following invariants must be held:
+    ///
+    /// * The provided index must be within the backing array's bounds. No runtime checks are performed.
     #[inline]
-    fn peek_at_mut(&mut self, idx: NodePtr) -> Option<&mut Node<T>> {
-        self.data.get_mut(idx as usize)
+    unsafe fn node_at_mut(&mut self, idx: NodePtr) -> &mut Node<T> {
+        unsafe { self.data.get_unchecked_mut(idx as usize) }
     }
 
+    /// Returns a reference to the value held at the specified node index.
+    ///
+    /// # Safety
+    ///
+    /// The following invariants must be held:
+    ///
+    /// * The provided index must be within the backing array's bounds. No runtime checks are performed.
+    /// * The data held by the accessed node *must* have been previously initialized.
+    #[inline]
+    unsafe fn peek_at(&self, idx: NodePtr) -> &T {
+        unsafe { self.node_at(idx).value.assume_init_ref() }
+    }
+
+    /// Returns a reference to the node at the head of the free list
     #[inline]
     fn free(&self) -> Option<&Node<T>> {
-        self.peek_at(self.free_ptr?)
+        // SAFETY: free_ptr is guaranteed to be within the list bounds if it is `Some`
+        unsafe { Some(self.node_at(self.free_ptr?)) }
     }
 
-    #[inline]
-    fn head(&self) -> Option<&Node<T>> {
-        self.peek_at(self.head_ptr?)
-    }
-
+    /// Returns a reference to the node at the tail of the list
     #[inline]
     fn tail_mut(&mut self) -> Option<&mut Node<T>> {
-        self.peek_at_mut(self.tail_ptr?)
+        // SAFETY: tail_ptr is guaranteed to be within the list bounds if it is `Some`
+        unsafe { Some(self.node_at_mut(self.tail_ptr?)) }
     }
 
+    /// Create a new queue
     #[inline]
     pub const fn new() -> Self {
         let mut pq = Self {
@@ -141,16 +171,13 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
         pq
     }
 
+    /// Return a reference to the minimum element in the queue
     #[inline]
     pub fn min(&self) -> Option<&T> {
         critical_section::with(|_| {
             // SAFETY: data[min_ptr] is guaranteed to always be initialized if min_ptr is
             // Some
-            unsafe {
-                self.data
-                    .get(self.min_ptr? as usize)
-                    .map(|n| n.value.assume_init_ref())
-            }
+            unsafe { Some(self.peek_at(self.min_ptr?)) }
         })
     }
 
@@ -158,8 +185,8 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
     ///
     /// # Errors
     ///
-    ///  * Returns [`Error::QueueFull`] if there is no space left in the backing
-    ///    storage.
+    /// * Returns [`Error::QueueFull`] if there is no space left in the backing
+    ///   storage.
     /// * Returns [`Error::SmallerThanMin`] if attempting to insert an element
     ///   that is smaller than the current minimum in the queue.
     // TODO: implement the above error
@@ -167,38 +194,37 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
     pub fn insert(&mut self, data: T) -> Result<(), Error> {
         // Entire node-swapping must be performed atomically
         critical_section::with(|_| {
-            // Pick the first free node to allocate to and move the free ptr to the next
-            // available free node
-            let insert_at = self.free_ptr.ok_or(Error::QueueFull)?;
+            unsafe {
+                // Pick the first free node to allocate to and move the free ptr to the next
+                // available free node
+                let insert_at = self.free_ptr.ok_or(Error::QueueFull)?;
 
-            // SAFETY: We've just proven free is Some above
-            self.free_ptr = unsafe { self.free().unwrap_unchecked().next };
+                // SAFETY: We've just proven free is Some above
+                self.free_ptr = self.free().unwrap_unchecked().next;
 
-            match self.tail_mut() {
-                Some(t) => {
-                    t.next = Some(insert_at);
-                    self.tail_ptr = Some(insert_at);
-                    // SAFETY: don't need to check the unwrap,min is guaranteed to be Some if tail
-                    // is Some Update the global queue minimum if necessary
-                    unsafe {
+                match self.tail_mut() {
+                    Some(t) => {
+                        t.next = Some(insert_at);
+                        self.tail_ptr = Some(insert_at);
+
+                        // Update the global minimum ptr if necessary
+                        // SAFETY: min is guaranteed to be Some if tail is Some
                         if data < *self.min().unwrap_unchecked() {
                             self.min_ptr = self.tail_ptr;
                         }
                     }
+                    None => {
+                        self.head_ptr = Some(0);
+                        self.tail_ptr = Some(0);
+                        self.min_ptr = Some(0);
+                    }
                 }
-                None => {
-                    self.head_ptr = Some(0);
-                    self.tail_ptr = Some(0);
-                    self.min_ptr = Some(0);
-                }
-            }
 
-            // SAFETY: tail is guaranteed to be set above
-            unsafe {
+                // SAFETY: tail is guaranteed to be Some from above
                 *self.tail_mut().unwrap_unchecked() = Node::new(data, None);
-            }
 
-            Ok(())
+                Ok(())
+            }
         })
     }
 
@@ -206,25 +232,12 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
     pub fn pop(&mut self) -> Option<T> {
         unsafe {
             let head_ptr = self.head_ptr?;
-
-            let head_node = self.head().unwrap_unchecked();
+            let head_node = self.node_at(head_ptr);
 
             // Seed cursors which keep track of global minimum and second minimum if there
             // are at least 2 elements in list
             let (mut min_ptr, mut second_min_ptr) = if let Some(second_ptr) = head_node.next {
-                let first_value = self
-                    .peek_at(head_ptr)
-                    .unwrap_unchecked()
-                    .value
-                    .assume_init_ref();
-
-                let second_value = self
-                    .peek_at(second_ptr)
-                    .unwrap_unchecked()
-                    .value
-                    .assume_init_ref();
-
-                if first_value <= second_value {
+                if self.peek_at(head_ptr) <= self.peek_at(second_ptr) {
                     (head_ptr, second_ptr)
                 } else {
                     (second_ptr, head_ptr)
@@ -233,7 +246,7 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
                 // Otherwise, singleton list special case
                 let value = head_node.value.assume_init_ref().clone();
 
-                self.peek_at_mut(head_ptr).unwrap_unchecked().next = self.free_ptr;
+                self.node_at_mut(head_ptr).next = self.free_ptr;
 
                 self.free_ptr = Some(head_ptr);
 
@@ -248,22 +261,13 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
             let mut cursor = head_ptr;
             let mut min_predecessor = head_ptr;
 
-            // SAFETY: node is guaranteed to be Some as check above
-            while let Some(next) = self.peek_at(cursor).unwrap_unchecked().next {
+            // SAFETY: node is guaranteed to be Some from check above
+            while let Some(next) = self.node_at(cursor).next {
                 // SAFETY: next has already been checked to be Some, and any node being pointed
                 // to has already been initialized
-                let next_value = self
-                    .peek_at(next)
-                    .unwrap_unchecked()
-                    .value
-                    .assume_init_ref();
-
-                // SAFETY: Any node being pointed to has already been initialized
-                let min_value = self.peek_at(min_ptr).unwrap().value.assume_init_ref();
-
                 // NOTE: <= necessary here to properly handle duplicate elements in list, ie set
                 // the second_min_ptr to an element of same value as min_value
-                if next_value <= min_value && min_ptr != next {
+                if self.peek_at(next) <= self.peek_at(min_ptr) && min_ptr != next {
                     second_min_ptr = min_ptr;
                     min_ptr = next;
                     min_predecessor = cursor;
@@ -273,21 +277,15 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
                 cursor = next;
             }
 
-            let removed_value = self
-                .peek_at(min_ptr)
-                .unwrap_unchecked()
-                .value
-                .assume_init_ref()
-                .clone();
+            let removed_value = self.peek_at(min_ptr).clone();
+            let next_after_min = self.node_at(min_ptr).next;
 
-            let next_after_min = self.peek_at(min_ptr).unwrap_unchecked().next;
-
-            // If min is head, update head
+            // If min was head, update head
             if Some(min_ptr) == self.head_ptr {
                 self.head_ptr = next_after_min;
             } else {
-                // Patch previous node
-                self.peek_at_mut(min_predecessor).unwrap_unchecked().next = next_after_min;
+                // Otherwise patch previous node
+                self.node_at_mut(min_predecessor).next = next_after_min;
             }
 
             // If min was tail, update tail
@@ -296,10 +294,10 @@ impl<T: PartialOrd + Clone + core::fmt::Debug, const N: usize> PriorityQueue<T, 
             }
 
             // Deallocate node by moving it into the free list
-            self.peek_at_mut(min_ptr).unwrap_unchecked().next = self.free_ptr;
+            self.node_at_mut(min_ptr).next = self.free_ptr;
             self.free_ptr = Some(min_ptr);
 
-            // Update cached minimum
+            // Update new cached queue minimum
             self.min_ptr = Some(second_min_ptr);
 
             Some(removed_value)
