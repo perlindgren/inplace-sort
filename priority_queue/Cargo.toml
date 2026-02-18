@@ -3,8 +3,11 @@ name = "priority_queue"
 version = "0.1.0"
 edition = "2024"
 
-# [lib]
-# name = "priority_queue"
-# path = "src/lib.rs"
-
 [dependencies]
+critical-section = "1.2.0"
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[features]
+std = ["critical-section/std"]
