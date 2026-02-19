@@ -223,7 +223,7 @@ Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the hea
   $N <--> \{H ->^*\} union \{F ->^*\}$,
 )<eq:nodes>
 
-#math.equation(block: true, $H ->^* "initialized"$)<eq:initialized>
+#math.equation(block: true, $forall n in \{H ->^*\}, "initialized(n)"$)<eq:initialized>
 
 #math.equation(
   block: true,
