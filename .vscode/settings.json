@@ -4,6 +4,7 @@
         "abbrs",
         "bananote",
         "dtmp",
-        "forgeable"
+        "forgeable",
+        "usize"
     ]
 }

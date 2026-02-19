@@ -211,7 +211,7 @@ given time, and it is therefore unnecessary to attempt to dispatch multiple task
 
 The restart-free implementation ensures that the amortized work for _extractMin_ of each enqueued element is $cal(O)(N)$.
 
-== Safety Invariants and API Operations
+== Safety Invariants<sec:safety_invariants>
 
 Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness. In the following we will outline key safety
 invariants for our implementation based on the below invariants:
@@ -247,102 +247,119 @@ Finally, @eq:tail_in_head stipulates that if the tail pointer is not empty, it p
 
 For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants, thus ensuring that all API operations are safe to call in a concurrent context.
 
+== Data Structure and API
 
-==== I) API operation: `const fn new() -> Self`
-
-Written entirely in safe Rust, the code implements the queue initialization, and is guaranteed to
-produce a valid `PriorityQueue` instance with all elements in an uninitialized state, as seen in
-@fig:pq_new.
+=== Data Structure
 
 #figure(
   placement: none,
-  // image("../figs/new.drawio.svg"), // hmm, bug..
-  // image("../figs/new.jpg"), // hmm, bad..
-  image("../figs/new.png"), // seems to work ok...
-  caption: [Priority Queue initialization, ? indicates uninitialized elements.],
-) <fig:pq_new>
+  ```rust
+  pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
+    data: [MaybeUninit<T>; N],
+    next: [Option<u16>; N],
+    head: Option<u16>,
+    tail: Option<u16>,
+    free: Option<u16>,
+  }
+  ```,
+  caption: [Priority Queue struct definition. The queue is backed by a constant sized array that can be either statically, heap or stack allocated in compliance to the Rust ownership model.],
+) <fig:pq_struct>
 
-==== II) API operation: `insert(&mut self, value: T) -> Result<(), ()>`
+The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of the queue is determined as a compile-time constant `N`. The `data` field is an array of `MaybeUninit<T>`, which allows us to manage uninitialized memory safely. The `next` field is an array of `Option<u16>`, which represents the linked list structure of the queue. The `head`, `tail`, and `free` fields hold indices to the head and the tail of the queue, and the head of the free list, respectively. The `Option<u16>` enum type allows us to leverage the Rust type system to represent the absence of a next node (`None` variant), thus avoiding the need for sentinel values and their associated risks of @UB.
+#footnote[This is just one possible implementation, alternatively we could pack the `data` and `next` fields into a single array of nodes, where each element is a struct containing both the value and the next pointer. However, we opted for the current design for its simplicity and clarity in illustrating the key concepts.]
 
-This is by far the most complex operation. We will cover it by covering the possible cases in a
-non-concurrent context, and then discuss the concurrent case.
+=== API: `const fn new() -> Self`
 
-We have three main cases to consider:
-1. If the queue is full, we return `Err(())`, and the queue remains unchanged. This is trivial and
-  requires no unsafe code.
-2. If the queue is empty, we insert the new value at the head of the queue, and update the `head`
-  and `free` pointers accordingly. This is also straightforward and can be implemented in safe Rust.
-  @fig:pq_first. depicts the state after inserting 4.
+Written entirely in safe Rust, the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
+#footnote[While only a subset of the Rust language is currently supported in _const context_, it is sufficient for our implementation.]
 
-#figure(
-  placement: none,
-  image("../figs/first.png"), // seems to work ok...
-  caption: [State of the queue after inserting 4.],
-) <fig:pq_first>
+The safety invariants @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
 
-3. If the queue is neither full nor empty, we need to find the correct position for the new value
-  based on its priority, and insert it while maintaining the order. Reading an uninitialized value
-  is illegal in Rust, as it implies @UB. However, following the `head`, always lead us to an
-  initialized value (4 in our example). We start by introducing a local cursor variable, initialized
-  to the `head` of the queue, and we read the value at the cursor.
-
-  Now we have two cases to consider:
-
-  a) the value to insert is of higher/equal priority, so insert before cursor, or b) the value to
-  insert is of lower priority, so continue searching following the cursor. In case the cursor
-  reaches the end of the queue, we insert at the end.
-
-  The two cases are illustrated in @fig:pq_insert.
-
-#figure(
-  placement: none,
-  image("../figs/insert.png"), // seems to work ok...
-  caption: [State of the queue after: a) `insert(2)`, b) `insert(6)`. Notice here, higher priority
-    implies smaller value.],
-) <fig:pq_insert>
-
-==== III) API operation: `fn peek(&self) -> Option<T>`
-
-If the queue is empty, we return `None`, else we can safely read the `head` value due
-@eq:initialized.
-
-==== IV) API operation: `fn pop(&mut self) -> Option<T>`
-
-If the queue is empty, we return `None`, and leave the queue unchanged. Else we can safely read the
-`head` value due @eq:initialized, and we update the `head` pointer to the next node in the queue.
-The popped node is then added to the free list, and we update the `free` pointer accordingly.
-
-=== Concurrency and Blocking
-
-So far we have covered the safety of the API operations in a non-concurrent context. Upholding the
-invariant @eq:initialized is key to ensuring that we only read initialized values, @eq:alloc and
-@eq:tail_in_head together ensures that nodes are re-cycled between the free list and the allocated list
-in a well defined manner.
-
-As mentioned in the background section, we can use the `critical-section` crate to provide mutual
-exclusion for our API operations. However, for our implementation the `insert` operation would block
-for $cal(O)(n)$ (insertion sort is linear time). While bounded, the excessive blocking is
-undesirable in a real-time context. The problem can be somewhat mitigated by more efficient
-implementations, e.g., the $cal(O)(k* log_2 n)$ binary heap. However, with the increased
-implementation complexity the constant factor $k$ can be significant, and the blocking time can
-still be excessive for real-time applications.
-
-Instead we propose an extension to the critical section abstraction, where we can define preemption
-points within the critical section. While not entirely *lock-free*, we can reduced the worst case
-blocking time to a constant $cal(O)(1)$.
-
-In @fig:operations_single_col cover the case of interest for arguing adherence to Rust safety invariants as well as assessment of blocking complexity.
+Blocking time is not a concern for the `new` function. In case of static allocation, the initialization is performed before `main` is executed, while in case of heap or stack allocation, the queue is not accessible until the `new` function returns, thus there is no concurrent access to the queue during initialization.
 
 
 
-#set enum(numbering: "a)")
-+ in figure shows the initial state after `new`, where the queue is empty.
-+ shows the state after `insert(42)`.
-+ shows the state after `insert(1337)`.
-+ shows the state after `insert(38)`.
-+ shows the state after `extractMin()`.
-+ shows the state after `extractMin()`.
-+ shows the state after `extractMin()`. At this point the queue is empty again. At this point `min()` returns `None`, and `extractMin()` returns with an error.
+// === API: `insert(&mut self, value: T) -> Result<(), ()>`
+
+// This is by far the most complex operation. We will cover it by covering the possible cases in a
+// non-concurrent context, and then discuss the concurrent case.
+
+// We have three main cases to consider:
+// 1. If the queue is full, we return `Err(())`, and the queue remains unchanged. This is trivial and
+//   requires no unsafe code.
+// 2. If the queue is empty, we insert the new value at the head of the queue, and update the `head`
+//   and `free` pointers accordingly. This is also straightforward and can be implemented in safe Rust.
+//   @fig:pq_first. depicts the state after inserting 4.
+
+// #figure(
+//   placement: none,
+//   image("../figs/first.png"), // seems to work ok...
+//   caption: [State of the queue after inserting 4.],
+// ) <fig:pq_first>
+
+// 3. If the queue is neither full nor empty, we need to find the correct position for the new value
+//   based on its priority, and insert it while maintaining the order. Reading an uninitialized value
+//   is illegal in Rust, as it implies @UB. However, following the `head`, always lead us to an
+//   initialized value (4 in our example). We start by introducing a local cursor variable, initialized
+//   to the `head` of the queue, and we read the value at the cursor.
+
+//   Now we have two cases to consider:
+
+//   a) the value to insert is of higher/equal priority, so insert before cursor, or b) the value to
+//   insert is of lower priority, so continue searching following the cursor. In case the cursor
+//   reaches the end of the queue, we insert at the end.
+
+//   The two cases are illustrated in @fig:pq_insert.
+
+// #figure(
+//   placement: none,
+//   image("../figs/insert.png"), // seems to work ok...
+//   caption: [State of the queue after: a) `insert(2)`, b) `insert(6)`. Notice here, higher priority
+//     implies smaller value.],
+// ) <fig:pq_insert>
+
+// ==== III) API operation: `fn peek(&self) -> Option<T>`
+
+// If the queue is empty, we return `None`, else we can safely read the `head` value due
+// @eq:initialized.
+
+// ==== IV) API operation: `fn pop(&mut self) -> Option<T>`
+
+// If the queue is empty, we return `None`, and leave the queue unchanged. Else we can safely read the
+// `head` value due @eq:initialized, and we update the `head` pointer to the next node in the queue.
+// The popped node is then added to the free list, and we update the `free` pointer accordingly.
+
+// === Concurrency and Blocking
+
+// So far we have covered the safety of the API operations in a non-concurrent context. Upholding the
+// invariant @eq:initialized is key to ensuring that we only read initialized values, @eq:alloc and
+// @eq:tail_in_head together ensures that nodes are re-cycled between the free list and the allocated list
+// in a well defined manner.
+
+// As mentioned in the background section, we can use the `critical-section` crate to provide mutual
+// exclusion for our API operations. However, for our implementation the `insert` operation would block
+// for $cal(O)(n)$ (insertion sort is linear time). While bounded, the excessive blocking is
+// undesirable in a real-time context. The problem can be somewhat mitigated by more efficient
+// implementations, e.g., the $cal(O)(k* log_2 n)$ binary heap. However, with the increased
+// implementation complexity the constant factor $k$ can be significant, and the blocking time can
+// still be excessive for real-time applications.
+
+// Instead we propose an extension to the critical section abstraction, where we can define preemption
+// points within the critical section. While not entirely *lock-free*, we can reduced the worst case
+// blocking time to a constant $cal(O)(1)$.
+
+// In @fig:operations_single_col cover the case of interest for arguing adherence to Rust safety invariants as well as assessment of blocking complexity.
+
+
+
+// #set enum(numbering: "a)")
+// + in figure shows the initial state after `new`, where the queue is empty.
+// + shows the state after `insert(42)`.
+// + shows the state after `insert(1337)`.
+// + shows the state after `insert(38)`.
+// + shows the state after `extractMin()`.
+// + shows the state after `extractMin()`.
+// + shows the state after `extractMin()`. At this point the queue is empty again. At this point `min()` returns `None`, and `extractMin()` returns with an error.
 
 
 
@@ -355,19 +372,17 @@ In @fig:operations_single_col cover the case of interest for arguing adherence t
 )
 <fig:operations_single_col>
 
-#figure(
-  placement: auto,
-  image("../build/figs/operations_two_col.pdf", width: 100%),
-  caption: [Extraction of the minimum element from the priority queue, with 3 concurrent readers and
-    a writer protected by a (global)critical section.],
-)
-<fig:operations_two_col>
+// #figure(
+//   placement: auto,
+//   image("../build/figs/operations_two_col.pdf", width: 100%),
+//   caption: [Extraction of the minimum element from the priority queue, with 3 concurrent readers and
+//     a writer protected by a (global)critical section.],
+// )
+// <fig:operations_two_col>
 
 == Dispatcher Design
 
-By performing the _extractMin_ operation at the level of the currently highest priority task, we
-ensure that the task dispatch latency is free of priority inversion, and the currently most urgent
-task isn't blocked by queue operations from lower priority dispatch handlers.
+By performing the _extractMin_ operation at the level of the currently highest priority task, we ensure that the task dispatch latency is free of priority inversion, and the currently most urgent task isn't blocked by queue operations from lower priority dispatch handlers.
 
 = Conclusions
 
