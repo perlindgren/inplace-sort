@@ -211,7 +211,125 @@ given time, and it is therefore unnecessary to attempt to dispatch multiple task
 
 The restart-free implementation ensures that the amortized work for _extractMin_ of each enqueued element is $cal(O)(N)$.
 
-== Running Example
+== Safety Invariants and API Operations
+
+Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness. In the following we will outline key safety
+invariants for our implementation based on the below invariants:
+
+Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the head pointer, free pointer, and tail pointer, respectively.
+
+#math.equation(
+  block: true,
+  $N <--> \{H ->^*\} union \{F ->^*\}$,
+)<eq:nodes>
+
+#math.equation(block: true, $H ->^* "initialized"$)<eq:initialized>
+
+#math.equation(
+  block: true,
+  $A in F ->^*, \{H ->^*\} union \{F ->^*\} ->^* space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
+)<eq:alloc>
+
+#math.equation(
+  block: true,
+  $not (T -> emptyset) --> T in H ->^*$,
+)<eq:tail_in_head>
+
+@eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer ($H->^*$) and the set of nodes reachable from the free pointer ($H->^*$). As a corollary, we can infer that nodes reachable from $H$ head ($F$ free) are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust.
+
+In @eq:initialized, $H->^*$ denotes the set of nodes reachable from the head pointer. Rust requires that all values are initialized before they can be safely read. Therefore, the invariant stipulates that all nodes reachable from the head pointer are initialized with a valid value according to the defined type. This invariant is crucial for ensuring that we never read uninitialized memory, which would lead to undefined behavior (@UB) in Rust.
+
+Thus by upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
+
+@eq:alloc applies to allocation (deallocation), where $A$ denotes the allocated (deallocated) node, and $H'(F) ->^*$ relates the updated state. The invariants stipulate that the allocated node $A$ is reachable from the free pointer, and that the head and free pointers are updated accordingly to reflect the allocation (deallocation). This invariant is crucial for ensuring that we never access memory that has been deallocated, which would lead to @UB in Rust. Together with @eq:nodes, we allocation and deallocation operations are ensured to re-cycle the allocated nodes $N$.
+
+Finally, @eq:tail_in_head stipulates that if the tail pointer is not empty, it points to the last node in the list reachable from the head pointer. This invariant is crucial for ensuring that we can safely append new nodes at the tail of the list.
+
+For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants, thus ensuring that all API operations are safe to call in a concurrent context.
+
+
+==== I) API operation: `const fn new() -> Self`
+
+Written entirely in safe Rust, the code implements the queue initialization, and is guaranteed to
+produce a valid `PriorityQueue` instance with all elements in an uninitialized state, as seen in
+@fig:pq_new.
+
+#figure(
+  placement: none,
+  // image("../figs/new.drawio.svg"), // hmm, bug..
+  // image("../figs/new.jpg"), // hmm, bad..
+  image("../figs/new.png"), // seems to work ok...
+  caption: [Priority Queue initialization, ? indicates uninitialized elements.],
+) <fig:pq_new>
+
+==== II) API operation: `insert(&mut self, value: T) -> Result<(), ()>`
+
+This is by far the most complex operation. We will cover it by covering the possible cases in a
+non-concurrent context, and then discuss the concurrent case.
+
+We have three main cases to consider:
+1. If the queue is full, we return `Err(())`, and the queue remains unchanged. This is trivial and
+  requires no unsafe code.
+2. If the queue is empty, we insert the new value at the head of the queue, and update the `head`
+  and `free` pointers accordingly. This is also straightforward and can be implemented in safe Rust.
+  @fig:pq_first. depicts the state after inserting 4.
+
+#figure(
+  placement: none,
+  image("../figs/first.png"), // seems to work ok...
+  caption: [State of the queue after inserting 4.],
+) <fig:pq_first>
+
+3. If the queue is neither full nor empty, we need to find the correct position for the new value
+  based on its priority, and insert it while maintaining the order. Reading an uninitialized value
+  is illegal in Rust, as it implies @UB. However, following the `head`, always lead us to an
+  initialized value (4 in our example). We start by introducing a local cursor variable, initialized
+  to the `head` of the queue, and we read the value at the cursor.
+
+  Now we have two cases to consider:
+
+  a) the value to insert is of higher/equal priority, so insert before cursor, or b) the value to
+  insert is of lower priority, so continue searching following the cursor. In case the cursor
+  reaches the end of the queue, we insert at the end.
+
+  The two cases are illustrated in @fig:pq_insert.
+
+#figure(
+  placement: none,
+  image("../figs/insert.png"), // seems to work ok...
+  caption: [State of the queue after: a) `insert(2)`, b) `insert(6)`. Notice here, higher priority
+    implies smaller value.],
+) <fig:pq_insert>
+
+==== III) API operation: `fn peek(&self) -> Option<T>`
+
+If the queue is empty, we return `None`, else we can safely read the `head` value due
+@eq:initialized.
+
+==== IV) API operation: `fn pop(&mut self) -> Option<T>`
+
+If the queue is empty, we return `None`, and leave the queue unchanged. Else we can safely read the
+`head` value due @eq:initialized, and we update the `head` pointer to the next node in the queue.
+The popped node is then added to the free list, and we update the `free` pointer accordingly.
+
+=== Concurrency and Blocking
+
+So far we have covered the safety of the API operations in a non-concurrent context. Upholding the
+invariant @eq:initialized is key to ensuring that we only read initialized values, @eq:alloc and
+@eq:tail_in_head together ensures that nodes are re-cycled between the free list and the allocated list
+in a well defined manner.
+
+As mentioned in the background section, we can use the `critical-section` crate to provide mutual
+exclusion for our API operations. However, for our implementation the `insert` operation would block
+for $cal(O)(n)$ (insertion sort is linear time). While bounded, the excessive blocking is
+undesirable in a real-time context. The problem can be somewhat mitigated by more efficient
+implementations, e.g., the $cal(O)(k* log_2 n)$ binary heap. However, with the increased
+implementation complexity the constant factor $k$ can be significant, and the blocking time can
+still be excessive for real-time applications.
+
+Instead we propose an extension to the critical section abstraction, where we can define preemption
+points within the critical section. While not entirely *lock-free*, we can reduced the worst case
+blocking time to a constant $cal(O)(1)$.
 
 In @fig:operations_single_col cover the case of interest for arguing adherence to Rust safety invariants as well as assessment of blocking complexity.
 
@@ -231,7 +349,7 @@ In @fig:operations_single_col cover the case of interest for arguing adherence t
 
 #figure(
   placement: auto,
-  image("../build/figs/operations_single_col.pdf", width: 50%),
+  image("../build/figs/operations_single_col.pdf", width: 100%),
   caption: [Extraction of the minimum element from the priority queue, with 3 concurrent readers and
     a writer protected by a (global)critical section.],
 )
