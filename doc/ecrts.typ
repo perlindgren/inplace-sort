@@ -270,7 +270,7 @@ The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of th
 
 === API: `const fn new() -> Self`
 
-Written entirely in safe Rust, the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
+Written entirely in safe Rust (implementation left out for brevity), the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
 #footnote[While only a subset of the Rust language is currently supported in _const context_, it is sufficient for our implementation.]
 
 The safety invariants @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
@@ -279,6 +279,30 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 
 
 === API: `insert(&mut self, value: T) -> Result<(), ()>`
+
+#figure(
+  placement: none,
+  ```rust
+  fn insert(&mut self, value: T) -> Result<(), Error> {
+      let new_index = self.free.ok_or(Error::QueueFull)?;
+      self.data[new_index as usize] = MaybeUninit::new(value);
+      self.free = self.next[new_index as usize];
+      self.next[new_index as usize] = None; // new node points to None
+      self.tail = Some(new_index);
+      if self.head.is_none() {
+          self.head = Some(new_index);
+      }
+      Ok(())
+  }
+  ```,
+  caption: [`insert` operation.],
+) <fig:pq_insert>
+
+The `insert` operation is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns an error (the Rust `?` operator). Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
+
+The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with @eq:alloc.  Notice here, $H$ is updated if and only if the initial $H$ is empty. @eq:nodes is upheld as $N <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$ by @eq:alloc. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
+
+
 
 // This is by far the most complex operation. We will cover it by covering the possible cases in a
 // non-concurrent context, and then discuss the concurrent case.
@@ -290,11 +314,6 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 //   and `free` pointers accordingly. This is also straightforward and can be implemented in safe Rust.
 //   @fig:pq_first. depicts the state after inserting 4.
 
-// #figure(
-//   placement: none,
-//   image("../figs/first.png"), // seems to work ok...
-//   caption: [State of the queue after inserting 4.],
-// ) <fig:pq_first>
 
 // 3. If the queue is neither full nor empty, we need to find the correct position for the new value
 //   based on its priority, and insert it while maintaining the order. Reading an uninitialized value

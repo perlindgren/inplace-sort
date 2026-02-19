@@ -6,10 +6,6 @@ use core::mem::MaybeUninit;
 use std::fmt;
 use std::fmt::Debug;
 
-// Reserved queue elements:
-// index 0: head index
-// index 1: free list head index
-// index 2: last node index
 #[derive(Debug)]
 pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
     data: [MaybeUninit<T>; N],
@@ -161,21 +157,23 @@ mod tests {
             assert_eq!(PQ.head, None);
             assert_eq!(PQ.tail, None);
             assert_eq!(PQ.free, Some(0));
-            assert_eq!(PQ.insert(45), Ok(()));
-            println!("insert 45: {}", PQ);
+            assert_eq!(PQ.insert(42), Ok(()));
+            println!("insert 42: {}", PQ);
             assert_eq!(PQ.head, Some(0));
             assert_eq!(PQ.tail, Some(0));
             assert_eq!(PQ.free, Some(1));
 
-            assert_eq!(PQ.insert(12), Ok(()));
-            println!("insert 12: {}", PQ);
+            assert_eq!(PQ.insert(1337), Ok(()));
+            println!("insert 1337: {}", PQ);
             assert_eq!(PQ.head, Some(0));
-            assert_eq!(PQ.tail, Some(0));
-            assert_eq!(PQ.free, Some(1));
+            assert_eq!(PQ.tail, Some(1));
+            assert_eq!(PQ.free, Some(2));
 
-            // println!("{:?}", PQ);
-            // assert_eq!(PQ.head(), Some(3));
-            // assert_eq!(PQ.tail(), Some(4));
+            assert_eq!(PQ.insert(38), Ok(()));
+            println!("insert 38: {}", PQ);
+            assert_eq!(PQ.head, Some(0));
+            assert_eq!(PQ.tail, Some(2));
+            assert_eq!(PQ.free, None);
 
             // assert_eq!(PQ.insert(56), Ok(()));
             // println!("{:?}", PQ);
