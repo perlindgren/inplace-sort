@@ -24,12 +24,4 @@ impl<T> Node<T> {
             next: None,
         }
     }
-
-    // #[inline]
-    // pub const fn new_empty() -> Self {
-    //     Self {
-    //         data: MaybeUninit::uninit(),
-    //         next: None,
-    //     }
-    // }
 }
