@@ -115,7 +115,7 @@ node manipulations also based on @CAS operations. We however deem these approach
 In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds
 on blocking times. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
-== Background and Motivation -- @EDF:lo Scheduling
+= Background and Motivation -- @EDF:lo Scheduling
 <sec:background>
 @PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
 priority queues, elements are allowed to be extracted under some given ordering. Classical
@@ -159,9 +159,18 @@ following properties:
 )
 <fig:extract-min>
 
-// == Contributions
+= Background Rust
 
-// #hl[Key contributions are [...]]
+#figure(
+  placement: none,
+  ```rust
+  critical_section::with(|cs| {
+    // This code runs within a critical section.
+  });
+  ```,
+  caption: [Rust critical section example.],
+) <fig:rust-critical-section>
+
 
 = In-place Priority Queue Approach
 
@@ -285,13 +294,15 @@ Blocking time is not a concern for the `new` function. In case of static allocat
   ```rust
   fn insert(&mut self, value: T) -> Result<(), Error> {
       let new_index = self.free.ok_or(Error::QueueFull)?;
-      self.data[new_index as usize] = MaybeUninit::new(value);
-      self.free = self.next[new_index as usize];
-      self.next[new_index as usize] = None; // new node points to None
-      self.tail = Some(new_index);
-      if self.head.is_none() {
-          self.head = Some(new_index);
-      }
+      critical_section::with(|_cs| {
+          self.data[new_index as usize] = MaybeUninit::new(value);
+          self.free = self.next[new_index as usize];
+          self.next[new_index as usize] = None; // new node points to None
+          self.tail = Some(new_index);
+          if self.head.is_none() {
+              self.head = Some(new_index);
+          }
+          });
       Ok(())
   }
   ```,
@@ -302,7 +313,7 @@ The `insert` operation is responsible for adding a new value to the priority que
 
 The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with @eq:alloc.  Notice here, $H$ is updated if and only if the initial $H$ is empty. @eq:nodes is upheld as $N <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$ by @eq:alloc. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
 
-
+Manipulation of the priority queue is protected by a (global) critical section. All operations are constant time $cal(O)(1)$.
 
 // This is by far the most complex operation. We will cover it by covering the possible cases in a
 // non-concurrent context, and then discuss the concurrent case.
