@@ -4,7 +4,7 @@ SRC_DIR = doc
 BUILD_DIR = build
 DIAGRAMS_DIR = figs
 BUILD_DIAGRAMS_DIR = $(BUILD_DIR)/$(DIAGRAMS_DIR)
-MAIN_TYP = $(SRC_DIR)/rtas.typ
+MAIN_TYP = $(SRC_DIR)/ecrts.typ
 OUTPUT_PDF = $(BUILD_DIR)/main.pdf
 ROOT_DIR = .
 
