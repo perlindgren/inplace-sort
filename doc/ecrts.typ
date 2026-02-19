@@ -227,7 +227,7 @@ Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the hea
 
 #math.equation(
   block: true,
-  $A in F ->^*, \{H ->^*\} union \{F ->^*\} ->^* space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
+  $A in \{F ->^*\}, \{H ->^*\} union \{F ->^*\} ->^* space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
 )<eq:alloc>
 
 #math.equation(
