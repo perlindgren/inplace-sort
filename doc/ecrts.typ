@@ -232,7 +232,7 @@ Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the hea
 
 #math.equation(
   block: true,
-  $not (T -> emptyset) --> T in H ->^*$,
+  $not (T -> emptyset) --> T == H ->^*$,
 )<eq:tail_in_head>
 
 @eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer ($H->^*$) and the set of nodes reachable from the free pointer ($H->^*$). As a corollary, we can infer that nodes reachable from $H$ head ($F$ free) are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust.
