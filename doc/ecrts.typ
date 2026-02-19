@@ -278,8 +278,7 @@ The safety invariants @sec:safety_invariants are trivially upheld by the `new` f
 Blocking time is not a concern for the `new` function. In case of static allocation, the initialization is performed before `main` is executed, while in case of heap or stack allocation, the queue is not accessible until the `new` function returns, thus there is no concurrent access to the queue during initialization.
 
 
-
-// === API: `insert(&mut self, value: T) -> Result<(), ()>`
+=== API: `insert(&mut self, value: T) -> Result<(), ()>`
 
 // This is by far the most complex operation. We will cover it by covering the possible cases in a
 // non-concurrent context, and then discuss the concurrent case.
@@ -367,8 +366,7 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 #figure(
   placement: auto,
   image("../build/figs/operations_single_col.pdf", width: 100%),
-  caption: [Extraction of the minimum element from the priority queue, with 3 concurrent readers and
-    a writer protected by a (global)critical section.],
+  caption: [Example execution of the API operations. The figure illustrates the state of the queue after a sequence of `insert` and `extractMin` operations. The queue is initially empty, and we insert three values (42, 1337, 38). We then perform three `extractMin` operations, which return the values in sorted order (38, 42, 1337), leaving the queue empty again.],
 )
 <fig:operations_single_col>
 
