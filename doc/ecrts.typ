@@ -213,6 +213,22 @@ The restart-free implementation ensures that the amortized work for _extractMin_
 
 == Running Example
 
+In @fig:operations_single_col cover the case of interest for arguing adherence to Rust safety invariants as well as assessment of blocking complexity.
+
+
+
+#set enum(numbering: "a)")
++ in figure shows the initial state after `new`, where the queue is empty.
++ shows the state after `insert(42)`.
++ shows the state after `insert(1337)`.
++ shows the state after `insert(38)`.
++ shows the state after `extractMin()`.
++ shows the state after `extractMin()`.
++ shows the state after `extractMin()`. At this point the queue is empty again. At this point `min()` returns `None`, and `extractMin()` returns with an error.
+
+
+
+
 #figure(
   placement: auto,
   image("../build/figs/operations_single_col.pdf", width: 50%),
