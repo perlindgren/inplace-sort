@@ -11,8 +11,6 @@ mod node;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
-    // TODO
-    // SmallerThanMin,
     QueueFull,
 }
 
@@ -42,7 +40,10 @@ impl<T: Debug + PartialOrd, const N: usize> Debug for PriorityQueue<T, N> {
                 writeln!(
                     f,
                     "PriorityQueue:\n\thead_ptr = {:?}\n\ttail_ptr = {:?}\n\tfree_ptr = {:?}\n\tmin_ptr = {:?}",
-                    self.head_ptr, self.tail_ptr, self.free_ptr, self.min_ptr
+                    *self.head_ptr.get(),
+                    *self.tail_ptr.get(),
+                    *self.free_ptr.get(),
+                    *self.min_ptr.get()
                 )?;
 
                 writeln!(f, "[STORAGE]")?;
@@ -52,7 +53,7 @@ impl<T: Debug + PartialOrd, const N: usize> Debug for PriorityQueue<T, N> {
                     writeln!(
                         f,
                         "\t({i}) {:?}, value: {:?}",
-                        self.data[i],
+                        *self.data[i].get(),
                         self.peek_at(i as NodePtr)
                     )?;
 
@@ -66,7 +67,7 @@ impl<T: Debug + PartialOrd, const N: usize> Debug for PriorityQueue<T, N> {
                         writeln!(
                             f,
                             "\t({cursor}) {:?}, value: {:?}",
-                            self.data[cursor as usize],
+                            *self.data[cursor as usize].get(),
                             self.peek_at(cursor)
                         )?;
                         // writeln!(f, "\t({cursor}) {:?}", self.data[cursor as usize])?;
@@ -87,7 +88,7 @@ impl<T: Debug + PartialOrd, const N: usize> Debug for PriorityQueue<T, N> {
                         writeln!(
                             f,
                             "\t({cursor}) {:?}, value: {:?}",
-                            self.data[cursor as usize],
+                            *self.data[cursor as usize].get(),
                             self.peek_at(cursor)
                         )?;
                         // writeln!(f, "\t({cursor}) {:?}", self.data[cursor as usize])?;
@@ -246,19 +247,16 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
     ///
     /// # Errors
     ///
-    /// * Returns [`Error::QueueFull`] if there is no space left in the backing
-    ///   storage.
-    /// * Returns [`Error::SmallerThanMin`] if attempting to insert an element
-    ///   that is smaller than the current minimum in the queue.
-    // TODO: implement the above error
+    /// * Returns [`Error::QueueFull`] if there is no space left in the backing storage.
     #[inline]
     pub fn insert(&self, data: T) -> Result<(), Error> {
         // Entire node-swapping must be performed atomically
-        critical_section::with(|_| {
+        critical_section::with(|cs| {
             unsafe {
                 // Pick the first free node to allocate to and move the free ptr to the next
                 // available free node
                 let insert_at = self.get_free_ptr().ok_or(Error::QueueFull)?;
+                let new_tail = Some(insert_at);
 
                 // SAFETY: We've just proven free is Some above
                 let next_free = self.free_node().unwrap_unchecked().next;
@@ -266,13 +264,7 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
 
                 match self.tail_node() {
                     Some(t) => {
-                        let t = &mut *t;
-                        let new_tail = Some(insert_at);
-                        t.next = new_tail;
-                        self.set_tail_ptr(new_tail);
-
-                        // SAFETY: we are inside a critical section
-                        let cs = CriticalSection::new();
+                        (*t).next = new_tail;
 
                         // Update the global minimum ptr if necessary
                         // SAFETY: min is guaranteed to be Some if tail is Some
@@ -281,11 +273,12 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
                         }
                     }
                     None => {
-                        self.set_head_ptr(Some(0));
-                        self.set_tail_ptr(Some(0));
-                        self.set_min_ptr(Some(0));
+                        self.set_head_ptr(new_tail);
+                        self.set_min_ptr(new_tail);
                     }
                 }
+
+                self.set_tail_ptr(new_tail);
 
                 // SAFETY: tail is guaranteed to be Some from above
                 *self.tail_node().unwrap_unchecked() = Node::new(data, None);

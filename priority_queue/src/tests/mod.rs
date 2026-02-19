@@ -1,10 +1,7 @@
-use critical_section::CriticalSection;
-
 use crate::{PriorityQueue, node::NodePtr};
 
 fn assert_next<T: PartialOrd, const N: usize>(
-    pq: &PriorityQueue<T, N>,
-    _cs: CriticalSection<'_>,
+    pq: &mut PriorityQueue<T, N>,
     idx: NodePtr,
     next: Option<NodePtr>,
 ) {
@@ -14,13 +11,9 @@ fn assert_next<T: PartialOrd, const N: usize>(
 }
 
 // SAFETY: must be run inside a critical section
-fn assert_tail<T: PartialOrd, const N: usize>(
-    pq: &mut PriorityQueue<T, N>,
-    cs: CriticalSection<'_>,
-    idx: NodePtr,
-) {
+fn assert_tail<T: PartialOrd, const N: usize>(pq: &mut PriorityQueue<T, N>, idx: NodePtr) {
     assert_eq!(*pq.tail_ptr.get_mut(), Some(idx));
-    assert_next(pq, cs, idx, None);
+    assert_next(pq, idx, None);
 }
 
 #[cfg_attr(not(loom), test)]
@@ -146,15 +139,13 @@ fn pop_length_two_list_ordered() {
     let min = pq.min();
     assert_eq!(min, Some(200));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(1));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(1));
-        assert_tail(&mut pq, cs, 1);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(0));
-        assert_next(&pq, cs, 0, Some(2));
-        assert_next(&pq, cs, 4, None);
-    });
+    assert_eq!(*pq.head_ptr.get_mut(), Some(1));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
+    assert_tail(&mut pq, 1);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(0));
+    assert_next(&mut pq, 0, Some(2));
+    assert_next(&mut pq, 4, None);
 
     let popped = pq.pop();
     assert_eq!(popped, Some(200));
@@ -187,15 +178,13 @@ fn pop_length_two_list_reverse_ordered() {
     let min = pq.min();
     assert_eq!(min, Some(200));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(0));
-        assert_tail(&mut pq, cs, 0);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(1));
-        assert_next(&pq, cs, 1, Some(2));
-        assert_next(&pq, cs, 4, None);
-    });
+    assert_eq!(*pq.head_ptr.get_mut(), Some(0));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(0));
+    assert_tail(&mut pq, 0);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(1));
+    assert_next(&mut pq, 1, Some(2));
+    assert_next(&mut pq, 4, None);
 
     let popped = pq.pop();
     assert_eq!(popped, Some(200));
@@ -235,15 +224,15 @@ fn pop_end() {
     // Now let's pop it
     assert_eq!(pq.pop(), Some(0));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(1));
-        assert_tail(&mut pq, cs, 3);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(4));
-        assert_next(&pq, cs, 4, None);
+    assert_eq!(*pq.head_ptr.get_mut(), Some(0));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
+    assert_tail(&mut pq, 3);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(4));
+    assert_next(&mut pq, 4, None);
 
-        // Test min_ref for fun
+    // Test min_ref for fun
+    critical_section::with(|cs| {
         let min = pq.min_ref(cs);
         assert_eq!(min, Some(&1));
     });
@@ -328,14 +317,12 @@ fn pop_middle() {
     assert_eq!(popped, Some(-1));
     assert_eq!(pq.min(), Some(0));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(2));
-        assert_tail(&mut pq, cs, 6);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(5));
-        assert_next(&pq, cs, 5, None);
-    });
+    assert_eq!(*pq.head_ptr.get_mut(), Some(0));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(2));
+    assert_tail(&mut pq, 6);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(5));
+    assert_next(&mut pq, 5, None);
 
     // ------
 
@@ -344,14 +331,12 @@ fn pop_middle() {
     assert_eq!(popped, Some(0));
     assert_eq!(pq.min(), Some(0));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(2));
-        assert_tail(&mut pq, cs, 4);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(6));
-        assert_next(&pq, cs, 5, None);
-    });
+    assert_eq!(*pq.head_ptr.get_mut(), Some(0));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(2));
+    assert_tail(&mut pq, 4);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(6));
+    assert_next(&mut pq, 5, None);
 
     // ------
 
@@ -359,14 +344,12 @@ fn pop_middle() {
     assert_eq!(popped, Some(0));
     assert_eq!(pq.min(), Some(1));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(0));
-        assert_tail(&mut pq, cs, 4);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(2));
-        assert_next(&pq, cs, 5, None);
-    });
+    assert_eq!(*pq.head_ptr.get_mut(), Some(0));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(0));
+    assert_tail(&mut pq, 4);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(2));
+    assert_next(&mut pq, 5, None);
 
     // ------
 
@@ -375,18 +358,64 @@ fn pop_middle() {
     assert_eq!(popped, Some(1));
     assert_eq!(pq.min(), Some(2));
 
-    critical_section::with(|cs| {
-        assert_eq!(*pq.head_ptr.get_mut(), Some(1));
-        assert_eq!(*pq.min_ptr.get_mut(), Some(1));
-        assert_tail(&mut pq, cs, 4);
-        // Verify edges of free list
-        assert_eq!(*pq.free_ptr.get_mut(), Some(0));
-        assert_next(&pq, cs, 5, None);
-    });
+    assert_eq!(*pq.head_ptr.get_mut(), Some(1));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
+    assert_tail(&mut pq, 4);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(0));
+    assert_next(&mut pq, 5, None);
 }
 
 #[cfg(loom)]
 #[cfg_attr(loom, test)]
 fn concurrent_pop_middle() {
     loom::model(|| pop_middle());
+}
+
+#[cfg_attr(not(loom), test)]
+fn reinsert() {
+    let mut pq = PriorityQueue::<i32, 5>::new();
+
+    // Arrange the queue such that it is empty, but node at index 0 is not the head of the free list
+    pq.insert(100).unwrap();
+    pq.insert(200).unwrap();
+    pq.insert(300).unwrap();
+    pq.pop();
+    pq.pop();
+    pq.pop();
+
+    assert_eq!(*pq.head_ptr.get_mut(), None);
+    assert_eq!(*pq.min_ptr.get_mut(), None);
+    // Verify edges of free list
+    assert_eq!(*pq.free_ptr.get_mut(), Some(2));
+    assert_next(&mut pq, 4, None);
+
+    // Now reinsert a value and see what happens
+    pq.insert(200).unwrap();
+
+    assert_eq!(*pq.head_ptr.get_mut(), Some(2));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(2));
+    assert_tail(&mut pq, 2);
+
+    pq.insert(100).unwrap();
+    pq.insert(300).unwrap();
+
+    assert_eq!(*pq.head_ptr.get_mut(), Some(2));
+    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
+    assert_tail(&mut pq, 0);
+
+    assert_eq!(pq.pop(), Some(100));
+    assert_eq!(pq.pop(), Some(200));
+    assert_eq!(pq.pop(), Some(300));
+
+    assert_eq!(*pq.head_ptr.get_mut(), None);
+    assert_eq!(*pq.tail_ptr.get_mut(), None);
+    assert_eq!(*pq.min_ptr.get_mut(), None);
+    assert_eq!(*pq.free_ptr.get_mut(), Some(0));
+}
+
+#[cfg(loom)]
+#[cfg_attr(loom, test)]
+fn concurrent_reinsert() {
+    loom::model(|| reinsert());
 }
