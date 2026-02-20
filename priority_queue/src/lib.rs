@@ -5,9 +5,8 @@ use core::{fmt::Debug, ptr};
 
 use critical_section::{CriticalSection, acquire, release};
 
-use crate::node::{Node, NodePtr};
-
 mod node;
+use node::{Node, NodePtr};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -250,6 +249,10 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
     /// * Returns [`Error::QueueFull`] if there is no space left in the backing storage.
     #[inline]
     pub fn insert(&self, data: T) -> Result<(), Error> {
+        if self.data.is_empty() {
+            return Err(Error::QueueFull);
+        }
+
         // Entire node-swapping must be performed atomically
         critical_section::with(|cs| {
             unsafe {
@@ -411,6 +414,7 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
             self.set_min_ptr(Some(state.second_min_ptr));
 
             (*STATE.0.get()) = None;
+
             release(cs_restore);
             Some(popped_value)
         }
