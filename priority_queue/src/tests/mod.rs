@@ -419,3 +419,30 @@ fn reinsert() {
 fn concurrent_reinsert() {
     loom::model(|| reinsert());
 }
+
+#[test]
+fn len_method_works_correctly() {
+    let pq = PriorityQueue::<i32, 5>::new();
+
+    critical_section::with(|cs| {
+        assert_eq!(pq.len(cs), 0);
+
+        pq.insert(0).unwrap();
+        assert_eq!(pq.len(cs), 1);
+
+        pq.insert(0).unwrap();
+        assert_eq!(pq.len(cs), 2);
+
+        pq.insert(100).unwrap();
+        assert_eq!(pq.len(cs), 3);
+
+        let _ = pq.pop().unwrap();
+        assert_eq!(pq.len(cs), 2);
+
+        let _ = pq.pop().unwrap();
+        assert_eq!(pq.len(cs), 1);
+
+        let _ = pq.pop().unwrap();
+        assert_eq!(pq.len(cs), 0);
+    });
+}

@@ -292,6 +292,22 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
     }
 
     #[inline]
+    pub fn len(&self, _cs: CriticalSection<'_>) -> usize {
+        unsafe {
+            let Some(mut cursor) = *self.head_ptr.get() else {
+                return 0;
+            };
+
+            let mut cnt = 1;
+            while let Some(next) = (*self.node_at(cursor)).next {
+                cnt += 1;
+                cursor = next;
+            }
+            cnt
+        }
+    }
+
+    #[inline]
     pub fn pop(&self) -> Option<T> {
         struct TraversalState {
             min_ptr: NodePtr,
