@@ -15,7 +15,6 @@ pub enum Error {
 
 struct TraversalState {
     min_ptr: NodePtr,
-    second_min_ptr: NodePtr,
     prev_cursor: NodePtr,
     cursor: NodePtr,
     min_predecessor: NodePtr,
@@ -27,7 +26,6 @@ pub struct PriorityQueue<T: PartialOrd, const N: usize> {
     head_ptr: UnsafeCell<Option<NodePtr>>,
     free_ptr: UnsafeCell<Option<NodePtr>>,
     tail_ptr: UnsafeCell<Option<NodePtr>>,
-    min_ptr: UnsafeCell<Option<NodePtr>>,
 
     traversal_state: UnsafeCell<Option<TraversalState>>,
 }
@@ -48,11 +46,10 @@ impl<T: Debug + PartialOrd, const N: usize> Debug for PriorityQueue<T, N> {
             unsafe {
                 writeln!(
                     f,
-                    "PriorityQueue:\n\thead_ptr = {:?}\n\ttail_ptr = {:?}\n\tfree_ptr = {:?}\n\tmin_ptr = {:?}",
+                    "PriorityQueue:\n\thead_ptr = {:?}\n\ttail_ptr = {:?}\n\tfree_ptr = {:?}",
                     *self.head_ptr.get(),
                     *self.tail_ptr.get(),
                     *self.free_ptr.get(),
-                    *self.min_ptr.get()
                 )?;
 
                 writeln!(f, "[STORAGE]")?;
@@ -179,18 +176,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
     }
 
     #[inline]
-    unsafe fn get_min_ptr(&self) -> Option<NodePtr> {
-        unsafe { *self.min_ptr.get() }
-    }
-
-    #[inline]
-    unsafe fn set_min_ptr(&self, new: Option<NodePtr>) {
-        unsafe {
-            *self.min_ptr.get() = new;
-        }
-    }
-
-    #[inline]
     unsafe fn get_head_ptr(&self) -> Option<NodePtr> {
         unsafe { *self.head_ptr.get() }
     }
@@ -222,7 +207,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
             head_ptr: UnsafeCell::new(None),
             tail_ptr: UnsafeCell::new(None),
             free_ptr: UnsafeCell::new(Some(0)),
-            min_ptr: UnsafeCell::new(None),
 
             traversal_state: UnsafeCell::new(None),
         };
@@ -242,18 +226,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
         pq
     }
 
-    /// Return a reference to the minimum element in the queue.
-    ///
-    /// To access the min element by reference, we must be inside a critical
-    /// section. For types `T` that are [`Clone`], you can also use
-    /// [`min`](PriorityQueue::min).
-    #[inline]
-    pub fn min_ref<'cs>(&'cs self, _cs: CriticalSection<'cs>) -> Option<&'cs T> {
-        // SAFETY: data[min_ptr] is guaranteed to always be initialized if min_ptr is
-        // Some
-        unsafe { Some(self.peek_at(self.get_min_ptr()?)) }
-    }
-
     /// Insert an element into the queue.
     ///
     /// # Errors
@@ -266,7 +238,7 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
         }
 
         // Entire node-swapping must be performed atomically
-        critical_section::with(|cs| {
+        critical_section::with(|_| {
             unsafe {
                 // Pick the first free node to allocate to and move the free ptr to the next
                 // available free node
@@ -280,16 +252,9 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
                 match self.tail_node() {
                     Some(t) => {
                         (*t).next = new_tail;
-
-                        // Update the global minimum ptr if necessary
-                        // SAFETY: min is guaranteed to be Some if tail is Some
-                        if data < *self.min_ref(cs).unwrap_unchecked() {
-                            self.set_min_ptr(new_tail);
-                        }
                     }
                     None => {
                         self.set_head_ptr(new_tail);
-                        self.set_min_ptr(new_tail);
                     }
                 }
 
@@ -339,17 +304,10 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
                 };
 
                 let head_node = self.node_at(head_ptr);
+                let min_ptr = head_ptr;
 
-                // Prepare the cursors which keep track of global minimum and second minimum, if there
-                // are at least 2 elements in list
-                let (min_ptr, second_min_ptr) = if let Some(next_after_head) = (*head_node).next {
-                    if self.peek_at(head_ptr) <= self.peek_at(next_after_head) {
-                        (head_ptr, next_after_head)
-                    } else {
-                        (next_after_head, head_ptr)
-                    }
-                } else {
-                    // Otherwise, special case for a singleton list
+                // Special case for a singleton list
+                if (*head_node).next.is_none() {
                     let value = ptr::read((*head_node).value.assume_init_ref());
 
                     *self.next_at(head_ptr) = self.get_free_ptr();
@@ -358,7 +316,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
 
                     self.set_head_ptr(None);
                     self.set_tail_ptr(None);
-                    self.set_min_ptr(None);
 
                     release(cs_restore);
                     return Some(value);
@@ -366,7 +323,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
 
                 state.replace(TraversalState {
                     min_ptr,
-                    second_min_ptr,
                     cursor: head_ptr,
                     prev_cursor: head_ptr,
                     min_predecessor: head_ptr,
@@ -394,7 +350,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
                 // NOTE: <= necessary here to properly handle duplicate elements in list, ie set
                 // second_min_ptr to an element of same value as min_value
                 if self.peek_at(next) <= self.peek_at(state.min_ptr) && state.min_ptr != next {
-                    state.second_min_ptr = state.min_ptr;
                     state.min_ptr = next;
                     state.min_predecessor = state.cursor;
                 }
@@ -425,30 +380,11 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
             *self.next_at(state.min_ptr) = self.get_free_ptr();
             self.set_free_ptr(Some(state.min_ptr));
 
-            // Update new cached queue minimum
-            self.set_min_ptr(Some(state.second_min_ptr));
-
             (*self.traversal_state.get()) = None;
 
             release(cs_restore);
             Some(popped_value)
         }
-    }
-}
-
-impl<T: PartialOrd + Clone, const N: usize> PriorityQueue<T, N> {
-    /// Return the minimum element in the queue by value.
-    ///
-    /// To access the min element by reference, you can also use
-    /// [`min_ref`](PriorityQueue::min_ref).
-    #[inline]
-    pub fn min(&self) -> Option<T> {
-        // SAFETY: data[min_ptr] is guaranteed to always be initialized if min_ptr is
-        // Some
-        critical_section::with(|_| unsafe {
-            let min = self.peek_at(self.get_min_ptr()?);
-            Some(min.clone())
-        })
     }
 }
 

@@ -22,8 +22,6 @@ fn new() {
 
     assert_eq!(*pq.head_ptr.get_mut(), None);
     assert_eq!(*pq.free_ptr.get_mut(), Some(0));
-
-    assert_eq!(pq.min(), None);
 }
 
 #[cfg(loom)]
@@ -35,45 +33,30 @@ fn concurrent_new() {
 #[cfg_attr(not(loom), test)]
 fn cached_min_remains_in_sync() {
     let pq = PriorityQueue::<i32, 5>::new();
-    assert_eq!(pq.min(), None);
 
     // Insert a bunch of data...
     pq.insert(2).unwrap();
-    assert_eq!(pq.min(), Some(2));
 
     pq.insert(1).unwrap();
-    // Did the global min get updated?
-    assert_eq!(pq.min(), Some(1));
 
     pq.insert(3).unwrap();
     pq.insert(4).unwrap();
 
-    // Is the global min still 1?
-    assert_eq!(pq.min(), Some(1));
-
     pq.insert(0).unwrap();
-    // Global min should now reflect new insert
-    assert_eq!(pq.min(), Some(0));
 
     // List is full
     assert!(pq.insert(2).is_err());
 
     // Now let's pop it
     assert_eq!(pq.pop(), Some(0));
-    // New min should be 1 again
-    assert_eq!(pq.min(), Some(1));
 
     assert_eq!(pq.pop(), Some(1));
-    assert_eq!(pq.min(), Some(2));
 
     assert_eq!(pq.pop(), Some(2));
-    assert_eq!(pq.min(), Some(3));
 
     assert_eq!(pq.pop(), Some(3));
-    assert_eq!(pq.min(), Some(4));
 
     assert_eq!(pq.pop(), Some(4));
-    assert!(pq.min().is_none());
     assert!(pq.pop().is_none());
 }
 
@@ -91,24 +74,13 @@ fn pop_length_one_list() {
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
     assert_eq!(*pq.tail_ptr.get_mut(), Some(0));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(0));
     assert_eq!(*pq.free_ptr.get_mut(), Some(1));
-
-    // Test min_ref for fun
-    critical_section::with(|cs| {
-        let min = pq.min_ref(cs);
-        assert_eq!(min, Some(&100));
-    });
-
-    let min = pq.min();
-    assert_eq!(min, Some(100));
 
     let popped = pq.pop();
     assert_eq!(popped, Some(100));
 
     assert_eq!(*pq.head_ptr.get_mut(), None);
     assert_eq!(*pq.tail_ptr.get_mut(), None);
-    assert_eq!(*pq.min_ptr.get_mut(), None);
     assert_eq!(*pq.free_ptr.get_mut(), Some(0));
 }
 
@@ -127,20 +99,12 @@ fn pop_length_two_list_ordered() {
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
     assert_eq!(*pq.tail_ptr.get_mut(), Some(1));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(0));
     assert_eq!(*pq.free_ptr.get_mut(), Some(2));
-
-    let min = pq.min();
-    assert_eq!(min, Some(100));
 
     let popped = pq.pop();
     assert_eq!(popped, Some(100));
 
-    let min = pq.min();
-    assert_eq!(min, Some(200));
-
     assert_eq!(*pq.head_ptr.get_mut(), Some(1));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
     assert_tail(&mut pq, 1);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(0));
@@ -166,20 +130,12 @@ fn pop_length_two_list_reverse_ordered() {
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
     assert_eq!(*pq.tail_ptr.get_mut(), Some(1));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
     assert_eq!(*pq.free_ptr.get_mut(), Some(2));
-
-    let min = pq.min();
-    assert_eq!(min, Some(100));
 
     let popped = pq.pop();
     assert_eq!(popped, Some(100));
 
-    let min = pq.min();
-    assert_eq!(min, Some(200));
-
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(0));
     assert_tail(&mut pq, 0);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(1));
@@ -202,21 +158,17 @@ fn pop_end() {
 
     // Arrange test
     pq.insert(2).unwrap();
-    assert_eq!(pq.min(), Some(2));
 
     pq.insert(1).unwrap();
     // Did the global min get updated?
-    assert_eq!(pq.min(), Some(1));
 
     pq.insert(3).unwrap();
 
     pq.insert(4).unwrap();
     // Is the global min still 1?
-    assert_eq!(pq.min(), Some(1));
 
     pq.insert(0).unwrap();
     // Global min should now reflect new insert
-    assert_eq!(pq.min(), Some(0));
 
     // List is full
     assert!(pq.insert(2).is_err());
@@ -225,17 +177,10 @@ fn pop_end() {
     assert_eq!(pq.pop(), Some(0));
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
     assert_tail(&mut pq, 3);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(4));
     assert_next(&mut pq, 4, None);
-
-    // Test min_ref for fun
-    critical_section::with(|cs| {
-        let min = pq.min_ref(cs);
-        assert_eq!(min, Some(&1));
-    });
 
     // Check other pops for good measure, without checking the internal state. More
     // popping tests await
@@ -257,20 +202,14 @@ fn duplicate_values() {
     pq.insert(200).unwrap();
     pq.insert(100).unwrap();
 
-    let min = pq.min();
-    assert_eq!(min, Some(100));
+    let popped = pq.pop();
+    assert_eq!(popped, Some(100));
 
     let popped = pq.pop();
     assert_eq!(popped, Some(100));
-    assert_eq!(pq.min(), Some(100));
-
-    let popped = pq.pop();
-    assert_eq!(popped, Some(100));
-    assert_eq!(pq.min(), Some(200));
 
     let popped = pq.pop();
     assert_eq!(popped, Some(200));
-    assert!(pq.min().is_none());
     assert!(pq.pop().is_none());
 }
 
@@ -286,39 +225,29 @@ fn pop_middle() {
 
     // Arrange test
     pq.insert(1).unwrap();
-    assert_eq!(pq.min(), Some(1));
 
     pq.insert(2).unwrap();
-    assert_eq!(pq.min(), Some(1));
 
     pq.insert(0).unwrap();
-    assert_eq!(pq.min(), Some(0));
 
     pq.insert(4).unwrap();
-    // Is the global min still 1?
-    assert_eq!(pq.min(), Some(0));
 
     pq.insert(3).unwrap();
     // Is the global min still 1?
-    assert_eq!(pq.min(), Some(0));
 
     pq.insert(-1).unwrap();
     // Global min should now reflect new insert
-    assert_eq!(pq.min(), Some(-1));
 
     pq.insert(0).unwrap();
     // Global min should now reflect new insert
-    assert_eq!(pq.min(), Some(-1));
 
     // ------
 
     // Now let's pop it
     let popped = pq.pop();
     assert_eq!(popped, Some(-1));
-    assert_eq!(pq.min(), Some(0));
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(2));
     assert_tail(&mut pq, 6);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(5));
@@ -329,10 +258,8 @@ fn pop_middle() {
     // Check other pops for good measure
     let popped = pq.pop();
     assert_eq!(popped, Some(0));
-    assert_eq!(pq.min(), Some(0));
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(2));
     assert_tail(&mut pq, 4);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(6));
@@ -342,10 +269,8 @@ fn pop_middle() {
 
     let popped = pq.pop();
     assert_eq!(popped, Some(0));
-    assert_eq!(pq.min(), Some(1));
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(0));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(0));
     assert_tail(&mut pq, 4);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(2));
@@ -356,10 +281,8 @@ fn pop_middle() {
     // This here pops the head
     let popped = pq.pop();
     assert_eq!(popped, Some(1));
-    assert_eq!(pq.min(), Some(2));
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(1));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
     assert_tail(&mut pq, 4);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(0));
@@ -385,7 +308,6 @@ fn reinsert() {
     pq.pop();
 
     assert_eq!(*pq.head_ptr.get_mut(), None);
-    assert_eq!(*pq.min_ptr.get_mut(), None);
     // Verify edges of free list
     assert_eq!(*pq.free_ptr.get_mut(), Some(2));
     assert_next(&mut pq, 4, None);
@@ -394,14 +316,12 @@ fn reinsert() {
     pq.insert(200).unwrap();
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(2));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(2));
     assert_tail(&mut pq, 2);
 
     pq.insert(100).unwrap();
     pq.insert(300).unwrap();
 
     assert_eq!(*pq.head_ptr.get_mut(), Some(2));
-    assert_eq!(*pq.min_ptr.get_mut(), Some(1));
     assert_tail(&mut pq, 0);
 
     assert_eq!(pq.pop(), Some(100));
@@ -410,7 +330,6 @@ fn reinsert() {
 
     assert_eq!(*pq.head_ptr.get_mut(), None);
     assert_eq!(*pq.tail_ptr.get_mut(), None);
-    assert_eq!(*pq.min_ptr.get_mut(), None);
     assert_eq!(*pq.free_ptr.get_mut(), Some(0));
 }
 
