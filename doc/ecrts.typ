@@ -236,8 +236,13 @@ Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the hea
 
 #math.equation(
   block: true,
-  $A in \{F ->^*\}, \{H ->^*\} union \{F ->^*\} ->^* space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
-)<eq:alloc>
+  $A in \{F ->^*\}, \{H ->^*\} union \{F ->^*\} space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
+)<eq:alloc_free>
+
+#math.equation(
+  block: true,
+  $A in \{H ->^*\}, \{H ->^*\} union \{F ->^*\} space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
+)<eq:alloc_head>
 
 #math.equation(
   block: true,
@@ -250,11 +255,11 @@ In @eq:initialized, $H->^*$ denotes the set of nodes reachable from the head poi
 
 Thus by upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
 
-@eq:alloc applies to allocation (deallocation), where $A$ denotes the allocated (deallocated) node, and $H'(F) ->^*$ relates the updated state. The invariants stipulate that the allocated node $A$ is reachable from the free pointer, and that the head and free pointers are updated accordingly to reflect the allocation (deallocation). This invariant is crucial for ensuring that we never access memory that has been deallocated, which would lead to @UB in Rust. Together with @eq:nodes, we allocation and deallocation operations are ensured to re-cycle the allocated nodes $N$.
+@eq:alloc_free applies to allocation (deallocation), where $A$ denotes the allocated (deallocated) node, and $H'(F) ->^*$ relates the updated state. The invariants stipulate that the allocated node $A$ is reachable from the free pointer, and that the head and free pointers are updated accordingly to reflect the allocation (deallocation). This invariant is crucial for ensuring that we never access memory that has been deallocated, which would lead to @UB in Rust. Together with @eq:nodes, we allocation and deallocation operations are ensured to re-cycle the allocated nodes $N$.
 
 Finally, @eq:tail_in_head stipulates that if the tail pointer is not empty, it points to the last node in the list reachable from the head pointer. This invariant is crucial for ensuring that we can safely append new nodes at the tail of the list.
 
-For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants, thus ensuring that all API operations are safe to call in a concurrent context.
+For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc_free, @eq:alloc_head and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants, thus ensuring that all API operations are safe to call in a concurrent context.
 
 == Data Structure and API
 
@@ -311,7 +316,7 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 
 The `insert` operation is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns an error (the Rust `?` operator). Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
 
-The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with @eq:alloc.  Notice here, $H$ is updated if and only if the initial $H$ is empty. @eq:nodes is upheld as $N <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$ by @eq:alloc. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
+The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with @eq:alloc_free/@eq:alloc_head.  Notice here, $H$ is updated if and only if the initial $H$ is empty. @eq:nodes is upheld as $N <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$ by @eq:alloc_head. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
 
 Manipulation of the priority queue is protected by a (global) critical section. All operations are constant time $cal(O)(1)$.
 
