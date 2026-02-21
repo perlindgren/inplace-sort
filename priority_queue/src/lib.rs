@@ -232,40 +232,37 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
     ///
     /// * Returns [`Error::QueueFull`] if there is no space left in the backing storage.
     #[inline]
-    pub fn insert(&self, data: T) -> Result<(), Error> {
+    pub fn insert(&self, _cs: CriticalSection<'_>, data: T) -> Result<(), Error> {
         if self.data.is_empty() {
             return Err(Error::QueueFull);
         }
 
-        // Entire node-swapping must be performed atomically
-        critical_section::with(|_| {
-            unsafe {
-                // Pick the first free node to allocate to and move the free ptr to the next
-                // available free node
-                let insert_at = self.get_free_ptr().ok_or(Error::QueueFull)?;
-                let new_tail = Some(insert_at);
+        unsafe {
+            // Pick the first free node to allocate to and move the free ptr to the next
+            // available free node
+            let insert_at = self.get_free_ptr().ok_or(Error::QueueFull)?;
+            let new_tail = Some(insert_at);
 
-                // SAFETY: We've just proven free is Some above
-                let next_free = self.free_node().unwrap_unchecked().next;
-                self.set_free_ptr(next_free);
+            // SAFETY: We've just proven free is Some above
+            let next_free = self.free_node().unwrap_unchecked().next;
+            self.set_free_ptr(next_free);
 
-                match self.tail_node() {
-                    Some(t) => {
-                        (*t).next = new_tail;
-                    }
-                    None => {
-                        self.set_head_ptr(new_tail);
-                    }
+            match self.tail_node() {
+                Some(t) => {
+                    (*t).next = new_tail;
                 }
-
-                self.set_tail_ptr(new_tail);
-
-                // SAFETY: tail is guaranteed to be Some from above
-                *self.tail_node().unwrap_unchecked() = Node::new(data, None);
-
-                Ok(())
+                None => {
+                    self.set_head_ptr(new_tail);
+                }
             }
-        })
+
+            self.set_tail_ptr(new_tail);
+
+            // SAFETY: tail is guaranteed to be Some from above
+            *self.tail_node().unwrap_unchecked() = Node::new(data, None);
+
+            Ok(())
+        }
     }
 
     #[inline]
