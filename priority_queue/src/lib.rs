@@ -330,6 +330,27 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_min_large() {
+        let mut pq = PriorityQueue::<9, i32>::new();
+        println!("after init: {}", pq);
+
+        let _ = pq.insert(38);
+        let _ = pq.insert(42);
+        let _ = pq.insert(1337);
+        let _ = pq.insert(38);
+        let _ = pq.insert(42);
+        let _ = pq.insert(1337);
+        let _ = pq.insert(38);
+        let _ = pq.insert(42);
+        let _ = pq.insert(1337);
+
+        for i in 0..10 {
+            println!("extracted {:?}", pq.extractMin());
+        }
+        println!("after extractMin: {}", pq);
+    }
+
+    #[test]
     fn test_cs_ps() {
         CsSingleCore::with(|_cs| {
             println!("in critical section");
