@@ -282,7 +282,7 @@ mod tests {
         println!("after insert42 {}", pq);
 
         println!("extractMin first time");
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(42));
         println!("after extractMin: {}", pq);
     }
 
@@ -297,11 +297,11 @@ mod tests {
         println!("42_38{}", pq);
 
         println!("extractMin first time");
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(38));
         println!("after extractMin: {}", pq);
 
         println!("extractMin second time");
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(42));
         println!("after extractMin: {}", pq);
     }
 
@@ -316,11 +316,11 @@ mod tests {
         println!("38_42{}", pq);
 
         println!("extractMin first time");
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(38));
         println!("after extractMin: {}", pq);
 
         println!("extractMin second time");
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(42));
         println!("after extractMin: {}", pq);
     }
 
@@ -336,16 +336,15 @@ mod tests {
         println!("38_42_1337 {}", pq);
 
         println!("extractMin first time");
-
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(38));
         println!("after extractMin: {}", pq);
 
         println!("extractMin second time");
-        println!("extracted {:?}", pq.extractMin());
+        assert_eq!(pq.extractMin(), Some(42));
         println!("after extractMin: {}", pq);
 
-        println!("extractMin second time");
-        println!("extracted {:?}", pq.extractMin());
+        println!("extractMin third time");
+        assert_eq!(pq.extractMin(), Some(1337));
         println!("after extractMin: {}", pq);
     }
 
@@ -364,9 +363,15 @@ mod tests {
         let _ = pq.insert(42);
         let _ = pq.insert(1337);
 
-        for i in 0..10 {
-            println!("extracted {:?}", pq.extractMin());
-        }
+        assert_eq!(pq.extractMin(), Some(38));
+        assert_eq!(pq.extractMin(), Some(38));
+        assert_eq!(pq.extractMin(), Some(38));
+        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(), Some(1337));
+        assert_eq!(pq.extractMin(), Some(1337));
+        assert_eq!(pq.extractMin(), Some(1337));
         println!("after extractMin: {}", pq);
     }
 
