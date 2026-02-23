@@ -78,10 +78,11 @@ impl PreemptionPoint for CsSingleCore {}
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MockTest {
     None,
+    Insert(i32),
     Pop,
 }
 
-impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
+impl<const N: usize> PriorityQueue<N, i32> {
     #[allow(clippy::new_without_default)]
     #[inline(always)]
     pub const fn new() -> Self {
@@ -109,8 +110,8 @@ impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     }
 
     #[inline(always)]
-    pub fn extractMin(&mut self) -> Option<T> {
-        CsSingleCore::with(|_cs| {
+    pub fn extractMin(&mut self, mock_test: MockTest) -> Option<i32> {
+        CsSingleCore::with(|mut cs| {
             let head_index = self.head?;
 
             let mut current_index = {
@@ -154,7 +155,30 @@ impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
 
                 current_index = next_index;
 
-                CsSingleCore::preemption_point(&_cs);
+                // CsSingleCore::preemption_point(&_cs);
+                (cs, _) = CsSingleCore::preemption_section(cs, || {
+                    println!("-- preemption section in extractMin --");
+                    match mock_test {
+                        MockTest::None => {}
+                        MockTest::Insert(value) => {
+                            println!("-------------- mock insert {} in preemption section", value);
+                            let _ = self.insert(value);
+                        }
+                        MockTest::Pop => {
+                            println!("-------------- mock pop in preemption section");
+                            let val = self.extractMin(MockTest::None);
+                            println!(
+                                "-------------- mock pop extracted value {:?} in preemption section",
+                                val
+                            );
+                            assert!(
+                                self.cursor.is_none(),
+                                "cursor should be None after pop in preemption section"
+                            );
+                        }
+                    }
+                });
+
                 // restore state from cursor
                 if self.cursor.is_none() {
                     break;
@@ -209,7 +233,7 @@ impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
     }
 
     #[inline(always)]
-    fn insert(&mut self, value: T) -> Result<(), Error> {
+    fn insert(&mut self, value: i32) -> Result<(), Error> {
         CsSingleCore::with(|_cs| {
             let new_index = self.free.ok_or(Error::QueueFull)?;
 
@@ -282,7 +306,7 @@ mod tests {
         println!("after insert42 {}", pq);
 
         println!("extractMin first time");
-        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
         println!("after extractMin: {}", pq);
     }
 
@@ -297,11 +321,53 @@ mod tests {
         println!("42_38{}", pq);
 
         println!("extractMin first time");
-        assert_eq!(pq.extractMin(), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
         println!("after extractMin: {}", pq);
 
         println!("extractMin second time");
-        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        println!("after extractMin: {}", pq);
+    }
+
+    #[test]
+    fn test_extract_min_42_38_pop() {
+        let mut pq = PriorityQueue::<3, i32>::new();
+        println!("after init: {}", pq);
+        println!("insert 42, 38");
+        let _ = pq.insert(42);
+        let _ = pq.insert(38);
+
+        println!("42_38{}", pq);
+
+        println!("extractMin first time");
+        assert_eq!(pq.extractMin(MockTest::Pop), None);
+        println!("after extractMin: {}", pq);
+
+        println!("extractMin second time");
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        println!("after extractMin: {}", pq);
+    }
+
+    #[test]
+    fn test_extract_min_42_38_insert() {
+        let mut pq = PriorityQueue::<3, i32>::new();
+        println!("after init: {}", pq);
+        println!("insert 42, 38");
+        let _ = pq.insert(42);
+        let _ = pq.insert(38);
+
+        println!("42_38{}", pq);
+
+        println!("extractMin first time");
+        assert_eq!(pq.extractMin(MockTest::Insert(1337)), Some(38));
+        println!("after extractMin: {}", pq);
+
+        println!("extractMin second time");
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        println!("after extractMin: {}", pq);
+
+        println!("extractMin second time");
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
         println!("after extractMin: {}", pq);
     }
 
@@ -316,11 +382,11 @@ mod tests {
         println!("38_42{}", pq);
 
         println!("extractMin first time");
-        assert_eq!(pq.extractMin(), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
         println!("after extractMin: {}", pq);
 
         println!("extractMin second time");
-        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
         println!("after extractMin: {}", pq);
     }
 
@@ -336,15 +402,15 @@ mod tests {
         println!("38_42_1337 {}", pq);
 
         println!("extractMin first time");
-        assert_eq!(pq.extractMin(), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
         println!("after extractMin: {}", pq);
 
         println!("extractMin second time");
-        assert_eq!(pq.extractMin(), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
         println!("after extractMin: {}", pq);
 
         println!("extractMin third time");
-        assert_eq!(pq.extractMin(), Some(1337));
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
         println!("after extractMin: {}", pq);
     }
 
@@ -363,15 +429,15 @@ mod tests {
         let _ = pq.insert(42);
         let _ = pq.insert(1337);
 
-        assert_eq!(pq.extractMin(), Some(38));
-        assert_eq!(pq.extractMin(), Some(38));
-        assert_eq!(pq.extractMin(), Some(38));
-        assert_eq!(pq.extractMin(), Some(42));
-        assert_eq!(pq.extractMin(), Some(42));
-        assert_eq!(pq.extractMin(), Some(42));
-        assert_eq!(pq.extractMin(), Some(1337));
-        assert_eq!(pq.extractMin(), Some(1337));
-        assert_eq!(pq.extractMin(), Some(1337));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
         println!("after extractMin: {}", pq);
     }
 
