@@ -8,8 +8,9 @@ use std::fmt::Debug;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Cursor<T> {
-    index: Option<u16>, // None indicates that index refers to head
-    next_value: T,
+    min_index: Option<u16>, // None indicates that index refers to head
+    min_value: T,
+    current_index: u16,
 }
 #[derive(Debug)]
 pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
@@ -43,14 +44,25 @@ struct CsToken;
 trait CriticalSection {
     fn with<R>(f: impl FnOnce(CsToken) -> R) -> R {
         // no-op
-        f(CsToken)
+        println!("-- critical section start --");
+        let result = f(CsToken);
+        println!("-- critical section end --");
+        result
     }
 }
 
 trait PreemptionPoint: CriticalSection {
-    fn preemption_point(cs: &CsToken);
+    fn preemption_point(_cs: &CsToken) {
+        println!("-- preemption point --");
+    }
 
-    fn preemption_section<R>(f: impl FnOnce(CsToken) -> R) -> R;
+    fn preemption_section<R>(cs: CsToken, f: impl FnOnce() -> R) -> (CsToken, R) {
+        // no-op
+        println!("-- preemption section start --");
+        let result = f();
+        println!("-- preemption section end --");
+        (cs, result)
+    }
 }
 
 struct CsSingleCore;
@@ -61,21 +73,7 @@ pub enum Error {
 }
 
 impl CriticalSection for CsSingleCore {}
-impl PreemptionPoint for CsSingleCore {
-    #[inline(always)]
-    fn preemption_point(_cs: &CsToken) {
-        println!("-- preemption point --");
-        // no-op
-    }
-
-    #[inline(always)]
-    fn preemption_section<R>(f: impl FnOnce(CsToken) -> R) -> R {
-        println!("-- preemption section start --");
-        let result = f(CsToken);
-        println!("-- preemption section end --");
-        result
-    }
-}
+impl PreemptionPoint for CsSingleCore {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MockTest {
@@ -112,88 +110,109 @@ impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
 
     #[inline(always)]
     pub fn extractMin(&mut self) -> Option<T> {
-        let head_index = self.head?;
+        CsSingleCore::with(|_cs| {
+            let head_index = self.head?;
 
-        if self.cursor.is_none() {
-            self.cursor = Some(Cursor {
-                next_value: unsafe { self.data[head_index as usize].assume_init() },
-                index: None,
-            });
-        }
-        println!("cursor {:?}", self.cursor);
-        let mut current_index = head_index;
+            let mut current_index = {
+                if let Some(cursor) = self.cursor {
+                    println!(
+                        "extractMin: restore cursor at index {:?}, value {:?}",
+                        cursor.current_index, cursor.min_value
+                    );
+                    cursor.current_index
+                } else {
+                    println!("extractMin: initialize cursor at head index {}", head_index);
+                    self.cursor = Some(Cursor {
+                        min_value: unsafe { self.data[head_index as usize].assume_init() },
+                        min_index: None,
+                        current_index: head_index,
+                    });
+                    head_index
+                }
+            };
 
-        while let Some(next_index) = self.next[current_index as usize] {
-            let next_value = unsafe { self.data[next_index as usize].assume_init() };
-            println!(
-                "-- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
-                self.cursor, current_index, next_index, next_value
-            );
+            println!("extractMin: cursor {:?}", self.cursor);
 
-            if next_value < self.cursor.unwrap().next_value {
+            while let Some(next_index) = self.next[current_index as usize] {
+                let next_value = unsafe { self.data[next_index as usize].assume_init() };
                 println!(
-                    "update cursor to next_index {}, next_value {:?}",
-                    next_index, next_value
+                    "extractMin: -- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
+                    self.cursor, current_index, next_index, next_value
                 );
-                self.cursor = Some(Cursor {
-                    next_value,
-                    index: Some(current_index),
-                });
+
+                if next_value < self.cursor.unwrap().min_value {
+                    println!(
+                        "update cursor to next_index {}, next_value {:?}",
+                        next_index, next_value
+                    );
+                    self.cursor = Some(Cursor {
+                        min_value: next_value,
+                        min_index: Some(current_index),
+                        current_index: next_index,
+                    });
+                }
+
+                current_index = next_index;
+
+                CsSingleCore::preemption_point(&_cs);
+                // restore state from cursor
+                if self.cursor.is_none() {
+                    break;
+                }
             }
 
-            current_index = next_index;
-        }
+            if let Some(cursor) = self.cursor {
+                println!("extract at cursor {:?}", cursor);
 
-        if let Some(cursor) = self.cursor {
-            println!("extract at cursor {:?}", cursor);
+                if let Some(current) = cursor.min_index {
+                    // extract and free node at current
+                    let next = self.next[current as usize];
+                    println!(
+                        "current is not head, extract node at current {} with next {:?}",
+                        current, next
+                    );
 
-            if let Some(current) = cursor.index {
-                // extract and free node at current
-                let next = self.next[current as usize];
-                println!(
-                    "current is not head, extract node at current {} with next {:?}",
-                    current, next
-                );
+                    // head should not be changed since we have traversed it
+                    self.next[current as usize] = self.next[next.unwrap() as usize]; // update next of current to skip the extracted node
 
-                // head should not be changed since we have traversed it
-                self.next[current as usize] = self.next[next.unwrap() as usize]; // update next of current to skip the extracted node
+                    // update free list to include the extracted node
+                    self.next[next.unwrap() as usize] = self.free;
+                    self.free = next;
 
-                // update free list to include the extracted node
-                self.next[next.unwrap() as usize] = self.free;
-                self.free = next;
+                    if self.tail == next {
+                        println!("update tail to cursor index {:?}", cursor.min_index);
+                        self.tail = cursor.min_index;
+                    }
+                } else {
+                    // extract and free last node
+                    let free_index = self.head.unwrap();
+                    let next = self.next[free_index as usize];
+                    println!(
+                        "extract last node, free index {}, next {:?}",
+                        free_index, next
+                    );
+                    self.next[free_index as usize] = self.free; // add to free list
+                    self.free = Some(free_index); // update free to point to the new free node
 
-                if self.tail == next {
-                    println!("update tail to cursor index {:?}", cursor.index);
-                    self.tail = cursor.index;
+                    self.head = next; // update head to next node
+                    if self.tail == Some(free_index) {
+                        println!("update tail to cursor index {:?}", cursor.min_index);
+                        self.tail = cursor.min_index;
+                    }
                 }
+                self.cursor = None;
+                Some(cursor.min_value)
             } else {
-                // extract and free last node
-                let free_index = self.head.unwrap();
-                let next = self.next[free_index as usize];
-                println!(
-                    "extract last node, free index {}, next {:?}",
-                    free_index, next
-                );
-                self.next[free_index as usize] = self.free; // add to free list
-                self.free = Some(free_index); // update free to point to the new free node
-
-                self.head = next; // update head to next node
-                if self.tail == Some(free_index) {
-                    println!("update tail to cursor index {:?}", cursor.index);
-                    self.tail = cursor.index;
-                }
+                None
             }
-            self.cursor = None;
-            Some(cursor.next_value)
-        } else {
-            None
-        }
+        })
     }
 
     #[inline(always)]
     fn insert(&mut self, value: T) -> Result<(), Error> {
-        let new_index = self.free.ok_or(Error::QueueFull)?;
-        let _ = CsSingleCore::with(|_cs: CsToken| {
+        CsSingleCore::with(|_cs| {
+            let new_index = self.free.ok_or(Error::QueueFull)?;
+
             self.data[new_index as usize] = MaybeUninit::new(value);
             self.free = self.next[new_index as usize];
             self.next[new_index as usize] = None; // new node points to None
@@ -203,8 +222,9 @@ impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> PriorityQueue<N, T> {
                 self.head = Some(new_index);
             }
             self.tail = Some(new_index); // if the queue was empty, set tail to new node
-        });
-        Ok(())
+
+            Ok(())
+        })
     }
 }
 
@@ -259,7 +279,7 @@ mod tests {
         println!("insert 42");
         let _ = pq.insert(42);
 
-        println!("42 {}", pq);
+        println!("after insert42 {}", pq);
 
         println!("extractMin first time");
         println!("extracted {:?}", pq.extractMin());
@@ -355,9 +375,8 @@ mod tests {
         CsSingleCore::with(|_cs| {
             println!("in critical section");
             CsSingleCore::preemption_point(&_cs);
-            CsSingleCore::preemption_section(|_cs| {
+            CsSingleCore::preemption_section(_cs, || {
                 println!("in preemption section");
-                CsSingleCore::preemption_point(&_cs);
             });
         });
     }
