@@ -13,6 +13,14 @@ pub enum Error {
     QueueFull,
 }
 
+struct TraversalState {
+    min_ptr: NodePtr,
+    second_min_ptr: NodePtr,
+    prev_cursor: NodePtr,
+    cursor: NodePtr,
+    min_predecessor: NodePtr,
+}
+
 // #[derive(Debug)]
 pub struct PriorityQueue<T: PartialOrd, const N: usize> {
     data: [UnsafeCell<Node<T>>; N],
@@ -20,6 +28,8 @@ pub struct PriorityQueue<T: PartialOrd, const N: usize> {
     free_ptr: UnsafeCell<Option<NodePtr>>,
     tail_ptr: UnsafeCell<Option<NodePtr>>,
     min_ptr: UnsafeCell<Option<NodePtr>>,
+
+    traversal_state: UnsafeCell<Option<TraversalState>>,
 }
 
 impl<T: PartialOrd, const N: usize> Default for PriorityQueue<T, N> {
@@ -213,6 +223,8 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
             tail_ptr: UnsafeCell::new(None),
             free_ptr: UnsafeCell::new(Some(0)),
             min_ptr: UnsafeCell::new(None),
+
+            traversal_state: UnsafeCell::new(None),
         };
 
         // Initialize free list.
@@ -309,19 +321,6 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
 
     #[inline]
     pub fn pop(&self) -> Option<T> {
-        struct TraversalState {
-            min_ptr: NodePtr,
-            second_min_ptr: NodePtr,
-            prev_cursor: NodePtr,
-            cursor: NodePtr,
-            min_predecessor: NodePtr,
-        }
-
-        struct State(UnsafeCell<Option<TraversalState>>);
-        unsafe impl Sync for State {}
-
-        static STATE: State = State(UnsafeCell::new(None));
-
         unsafe {
             // SAFETY: Cannot use critical_section::with because returning from the closure
             // doesn't return the entire function. We have to be careful to release the CS
@@ -331,7 +330,7 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
             // First, check whether STATE is full or empty. If full, this means we're
             // preempting/stealing an ongoing pop operation; we simply move onto the next
             // step. If empty, we start a new one.
-            let state = &mut *STATE.0.get();
+            let state = &mut *self.traversal_state.get();
             if state.is_none() {
                 // List is empty
                 let Some(head_ptr) = *self.head_ptr.get() else {
@@ -381,7 +380,7 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
 
                 // If state is now None, we've been preempted and the pop has been stolen from
                 // under us. Our work here is done.
-                let Some(state) = &mut *STATE.0.get() else {
+                let Some(state) = &mut *self.traversal_state.get() else {
                     critical_section::release(cs_restore);
                     return None;
                 };
@@ -429,7 +428,7 @@ impl<T: PartialOrd, const N: usize> PriorityQueue<T, N> {
             // Update new cached queue minimum
             self.set_min_ptr(Some(state.second_min_ptr));
 
-            (*STATE.0.get()) = None;
+            (*self.traversal_state.get()) = None;
 
             release(cs_restore);
             Some(popped_value)
