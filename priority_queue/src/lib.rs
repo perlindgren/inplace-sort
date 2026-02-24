@@ -51,16 +51,16 @@ trait CriticalSection {
     }
 }
 
-trait PreemptionPoint: CriticalSection {
+trait Preemption: CriticalSection {
     fn preemption_point(_cs: &CsToken) {
         println!("-- preemption point --");
     }
 
-    fn preemption_section<R>(cs: CsToken, f: impl FnOnce() -> R) -> (CsToken, R) {
+    fn preemption_region<R>(cs: CsToken, f: impl FnOnce() -> R) -> (CsToken, R) {
         // no-op
-        println!("-- preemption section start --");
+        println!("-- preemption region start --");
         let result = f();
-        println!("-- preemption section end --");
+        println!("-- preemption region end --");
         (cs, result)
     }
 }
@@ -73,7 +73,7 @@ pub enum Error {
 }
 
 impl CriticalSection for CsSingleCore {}
-impl PreemptionPoint for CsSingleCore {}
+impl Preemption for CsSingleCore {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MockTest {
@@ -156,7 +156,7 @@ impl<const N: usize> PriorityQueue<N, i32> {
                 current_index = next_index;
 
                 // CsSingleCore::preemption_point(&_cs);
-                (cs, _) = CsSingleCore::preemption_section(cs, || {
+                (cs, _) = CsSingleCore::preemption_region(cs, || {
                     println!("-- preemption section in extractMin --");
                     match mock_test {
                         MockTest::None => {}
@@ -446,7 +446,7 @@ mod tests {
         CsSingleCore::with(|_cs| {
             println!("in critical section");
             CsSingleCore::preemption_point(&_cs);
-            CsSingleCore::preemption_section(_cs, || {
+            CsSingleCore::preemption_region(_cs, || {
                 println!("in preemption section");
             });
         });

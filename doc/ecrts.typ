@@ -64,13 +64,16 @@
 In @DP scheduling, kernels generally rely on priority queues to select the task to be executed.
 The choice of queue implementation introduces tradeoffs with respect to software overhead,
 memory usage and blocking times. A key consideration is thread-safety and memory safety. In this
-short paper, we sketch an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$
+paper, we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$
 upper bound on inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and
 $cal(O)(N)$ `extractMin` operations. The queue is implemented as a linked list backed by a
 fixed-size array, and can be allocated either statically, on the heap or on the stack. Potential
 applications include real-time scheduling, event management, and graph algorithms where
 predictable and minimal blocking times are paramount.
+
+For the implementation we leverage on the strong typing and memory safety guarantees of the Rust systems level programming language. In order to obtain constant upper bound blocking we propose an extension to the `critical-section` crate, introducing structured and well defined preemption points and preemption regions within a critical section. Finally, we define a set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety of the implementation.
 ]
+
 
 // index-terms: (
 //   "memory safety",
@@ -111,9 +114,15 @@ for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a
 @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
 node manipulations also based on @CAS operations. We however deem these approaches unsuitable for hard real-time kernel implementations targeting single-core @COTS hardware, as the worst case blocking time is unbounded when accounting for retried operations.
 
+In this paper we propose a concurrent priority queue implementation leveraging Rust's strong typing and memory safety guarantees. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
-In this paper we sketch a concurrent priority queue implementation, aiming for constant upper bounds
-on blocking times. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
+Key contributions of this work include:
+- An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin` operations.
+- An extension to the embedded Rust foundational `critical-section` crate, introducing structured preemption points and preemption regions within a critical section. For our proposal, we present safety argumentation and show compliance to the `critical-section` crate's safety guarantees.
+- A set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety and soundness of the implementation.
+- Leveraging the proposed preemption point abstraction we show that worst case blocking time has a constant upper bound of $cal(O)(1)$, thus suitable for hard real-time scheduling applications.
+- By introducing a work-stealing mechanism, the amortized complexity can maintain the $cal(O)(N)$ `extractMin` also for the current case.
+- Applied to an @EDF scheduler, the proposed design allows for minimal task dispatch latency, free of priority inversion, and with minimal jitter.
 
 = Background and Motivation -- @EDF:lo Scheduling
 <sec:background>
@@ -128,7 +137,7 @@ handlers:
 + The priority of arrival and dispatch handlers is determined according to relative task deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize time-stamp jitter.
 
 Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
-following properties:
+following properties:<sec:requirements>
 
 - Support for concurrent access from multiple execution contexts (e.g., threads or interrupts
   handlers).
@@ -138,7 +147,7 @@ following properties:
 
 #figure(
   placement: auto,
-  image("../build/figs/arrival_handler.pdf", width: 80%),
+  image("../build/figs/arrival_handler.pdf", width: 90%),
   caption: [Example implementation of an @EDF arrival handler $A_i$.],
 )
 <fig:arrival-handler>
@@ -159,18 +168,141 @@ following properties:
 )
 <fig:extract-min>
 
-= Background Rust
+= Background Embedded Rust
+
+Rust is a strongly-typed systems level programming language with a focus on safety and performance. Rust's ownership model and borrowing rules provide strong memory safety guarantees, preventing common issues such as null pointer dereferences, buffer overflows, etc. Rust ensures memory safety also in concurrent contexts, by means of the `Send` and `Sync` traits, where types implementing `Send` can be safely transferred across execution contexts, and types implementing `Sync` can be safely shared across execution contexts.
+
+For our purpose, the priority queue is accessed from both arrival and dispatch handlers executing preemptively, thus the underlying data structure must implement the `Sync` trait.
+
+== Rust Critical Section
+
+In context of single-core bare-metal embedded systems, preemption can be prevented by disabling interrupts, and thus ensure mutual exclusion for _critical sections_ of code with access to a given resource. Leveraging on Rust *zero-cost* abstractions, the `critical_section` crate defines a closure based API enforcing strict nesting to ensure that interrupt state is properly restored. The user provided closure takes a `CriticalSection` (`CS`) token argument - a zero-sized type that serves as a proof of code execution under protection of mutual exclusion, as we will later see in use for accessing our priority queue. The `CS` token argument can neither be leaked outside of the critical section, nor created (forged) by user code, thus ensuring that critical sections are properly delimited and preventing misuse at compile time. @fig:rust-critical-section shows an example use, and @fig:rust-cs-trait shows the required trait implementation for a critical section implementation. The `with` function is implemented in terms of the `acquire` and `release` functions.
 
 #figure(
   placement: none,
   ```rust
-  critical_section::with(|cs| {
+  pub unsafe trait Impl {
+      // Required methods
+      unsafe fn acquire() -> RawRestoreState;
+      unsafe fn release(restore_state: RawRestoreState);
+  }
+  ```,
+  caption: [Rust critical section example.],
+) <fig:rust-cs-trait>
+
+#figure(
+  placement: none,
+  ```rust
+  cs_impl::with(|cs| {
     // This code runs within a critical section.
   });
   ```,
   caption: [Rust critical section example.],
 ) <fig:rust-critical-section>
 
+== Preemption Points and Regions
+
+In this work we propose an extension to the `critical section` abstraction, to provide preemption points and preemption regions within a critical section while maintaining the advantages of structured nesting. As a proof on concept we base the implementation (@fig:rust-preemption) on the current `critical_section` crate.
+
+
+#figure(
+  placement: none,
+  ```rust
+    struct PreemptiveRegion;
+
+    impl PreemptiveRegion {
+      /// Executes a closure with preemption enabled, inside a critical section.
+      ///
+      /// # Safety
+      ///
+      /// By requiring the CriticalSection (CS) token, we ensure that `with` can only
+      /// be called from within a critical section.
+      ///
+      /// The CS token will be moved into the with function, but not leaked to into
+      /// the closure `f`.
+      ///
+      /// The CS token will be returned to the caller after the closure `f` allowing
+      /// reuse in consecutive calls to `with` within the same critical section.
+      ///
+      /// Given the assumption that RestoreState::invalid() represents a states
+      /// where preemption is enabled, the closure `f` will thus execute:
+      ///
+      /// - Within a critical section.
+      /// - With preemption enabled.
+      /// - Without access to the CriticalSection token.
+      ///
+      pub fn with<R>(cs: CriticalSection, f: impl FnOnce() -> R) -> (R, CriticalSection) {
+          unsafe { critical_section::release(RestoreState::invalid()) };
+
+          let result = f();
+
+          unsafe { critical_section::acquire() };
+          (result, cs)
+      }
+
+      /// Create a well-defined preemption point within a critical section.
+      ///
+      /// # Safety
+      ///
+      /// See `with` for safety properties.
+      ///
+      pub fn point(cs: CriticalSection) -> CriticalSection {
+          Self::with(cs, || {}).1
+      }
+  }
+  ```,
+  caption: [PreemptiveRegion implementation.],
+) <fig:rust-preemption>
+
+#figure(
+  placement: none,
+  ```rust
+  mod private {
+      use super::*;
+      pub struct MyProtectedData {
+          value: i32,
+      }
+
+      impl MyProtectedData {
+          pub fn new(value: i32) -> Self {
+              Self { value }
+          }
+
+          pub fn access(&self, cs: &CriticalSection) -> i32 {
+              // Access the protected data within the critical section
+              self.value
+          }
+      }
+  }
+
+  use private::MyProtectedData;
+  fn main() {
+      let protected_data = MyProtectedData::new(42);
+
+      critical_section::with(|cs| {
+          protected_data.access(&cs);
+
+          let (_, cs) = PreemptiveRegion::with(cs, || {
+              // The CS token is unaccessible inside the closure
+              // protected_data.access(&cs); <-- compile error, attempt to borrow moved value
+          });
+
+          let cs = PreemptiveRegion::with(cs, || {
+              // protected_data.access(&cs); <-- compile error, attempt te borrow moved value
+          });
+
+          //cs <-- compile error, value will not live long enough, thus cannot be be leaked
+      });
+  }
+  ```,
+  caption: [Example usage of the PreemptiveRegion API. The example demonstrates how to access protected data within a critical section, and how to execute code with preemption enabled while ensuring that the CriticalSection token is not accessible within the preemptive region. Attempting to access the CriticalSection token within the preemptive region results in a compile-time error, thus enforcing the safety properties of the API.],
+) <fig:rust-preemption-example>
+
+== Native Support
+
+For the POC implementation we make the assumption that `RestoreState::invalid()` represents a state where preemption is enabled. Moreover, we rely on a fork of `critical-section`, where the `CriticalSection` type have been strengthened to enforce move semantics, crucial for preventing the CS token from being leaked into the preemptive region.
+
+In future work, we plan to further investigate the `RestoreState` design and backing `Impl` trait definition to facilitate native support of preemptive regions in the upstreams `critical-section` crate.
 
 = In-place Priority Queue Approach
 
@@ -236,17 +368,17 @@ Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the hea
 
 #math.equation(
   block: true,
-  $A in \{F ->^*\}, \{H ->^*\} union \{F ->^*\} space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
+  $A in \{F ->^*\} and \{F ->^*\} space <--> space \{A\} union \{F' ->^*\}$,
 )<eq:alloc_free>
 
 #math.equation(
   block: true,
-  $A in \{H ->^*\}, \{H ->^*\} union \{F ->^*\} space <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$,
+  $\{A\} union \{H' ->^*\} space <--> space \{H ->^*\} and A in \{H ->^*\}$,
 )<eq:alloc_head>
 
 #math.equation(
   block: true,
-  $not (T -> emptyset) --> T == H ->^*$,
+  $not (T ->^* emptyset) --> T == H ->^*$,
 )<eq:tail_in_head>
 
 @eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer ($H->^*$) and the set of nodes reachable from the free pointer ($H->^*$). As a corollary, we can infer that nodes reachable from $H$ head ($F$ free) are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust.
@@ -255,11 +387,12 @@ In @eq:initialized, $H->^*$ denotes the set of nodes reachable from the head poi
 
 Thus by upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
 
-@eq:alloc_free applies to allocation (deallocation), where $A$ denotes the allocated (deallocated) node, and $H'(F) ->^*$ relates the updated state. The invariants stipulate that the allocated node $A$ is reachable from the free pointer, and that the head and free pointers are updated accordingly to reflect the allocation (deallocation). This invariant is crucial for ensuring that we never access memory that has been deallocated, which would lead to @UB in Rust. Together with @eq:nodes, we allocation and deallocation operations are ensured to re-cycle the allocated nodes $N$.
+@eq:alloc_free applies to allocation(free), right(left) implication, where $A$ denotes a node in the free list $F ->^*$, and $F' ->^*$ relates the state after(before) allocation(free). The invariant stipulates that  $A$ is reachable from the free pointer before(after) the transition. This invariant is crucial for ensuring that we never access memory that has been deallocated, which would lead to @UB in Rust.
+Analogously, @eq:alloc_head, cover enqueue(dequeue) of nodes reachable from the head pointer $H$. Together with @eq:nodes, allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
 
-Finally, @eq:tail_in_head stipulates that if the tail pointer is not empty, it points to the last node in the list reachable from the head pointer. This invariant is crucial for ensuring that we can safely append new nodes at the tail of the list.
+Finally, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it points to the *last* node in the list reachable from the head pointer $H$. This invariant is crucial for ensuring that we can safely assume that appended nodes are inserted at the tail of the list reachable from $H$.
 
-For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc_free, @eq:alloc_head and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants, thus ensuring that all API operations are safe to call in a concurrent context.
+For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc_free, @eq:alloc_head, and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
 
 == Data Structure and API
 
@@ -268,12 +401,19 @@ For the implementation of the API operations, we have implemented allocation and
 #figure(
   placement: none,
   ```rust
+  pub struct Cursor<T> {
+      min_index: Option<u16>, // None, value indicates that index refers to head
+      min_value: T,
+      current_index: u16,
+  }
+
   pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
     data: [MaybeUninit<T>; N],
     next: [Option<u16>; N],
     head: Option<u16>,
     tail: Option<u16>,
     free: Option<u16>,
+    cursor: Option<Cursor<T>>,
   }
   ```,
   caption: [Priority Queue struct definition. The queue is backed by a constant sized array that can be either statically, heap or stack allocated in compliance to the Rust ownership model.],
@@ -294,31 +434,15 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 
 === API: `insert(&mut self, value: T) -> Result<(), ()>`
 
-#figure(
-  placement: none,
-  ```rust
-  fn insert(&mut self, value: T) -> Result<(), Error> {
-      let new_index = self.free.ok_or(Error::QueueFull)?;
-      critical_section::with(|_cs| {
-          self.data[new_index as usize] = MaybeUninit::new(value);
-          self.free = self.next[new_index as usize];
-          self.next[new_index as usize] = None; // new node points to None
-          self.tail = Some(new_index);
-          if self.head.is_none() {
-              self.head = Some(new_index);
-          }
-          });
-      Ok(())
-  }
-  ```,
-  caption: [`insert` operation.],
-) <fig:pq_insert>
+The `insert` operation is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
 
-The `insert` operation is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns an error (the Rust `?` operator). Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
+The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with with invariants @eq:alloc_free and @eq:alloc_head. The invariant @eq:nodes holds by  @eq:alloc_free  and  @eq:alloc_head transitively. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
 
-The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with @eq:alloc_free/@eq:alloc_head.  Notice here, $H$ is updated if and only if the initial $H$ is empty. @eq:nodes is upheld as $N <--> space \{A\} union \{H' ->^*\} union \{F' ->^*\}$ by @eq:alloc_head. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
+Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
 
-Manipulation of the priority queue is protected by a (global) critical section. All operations are constant time $cal(O)(1)$.
+=== API: `extractMin(&mut self) -> Option<T> {`
+
+
 
 // This is by far the most complex operation. We will cover it by covering the possible cases in a
 // non-concurrent context, and then discuss the concurrent case.
