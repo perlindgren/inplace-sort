@@ -464,7 +464,16 @@ Manipulation of the priority queue is protected by a (global) critical section, 
   caption: [Priority Queue `insert` operation.],
 ) <fig:pq_insert>
 
-=== API: `extractMin(&mut self) -> Option<T> {`
+=== API: `extractMin(&mut self) -> Option<T>`
+
+@fig:pq_extractMin illustrates in abbreviation the `extractMin` operation, which is responsible for removing and returning the minimum element from the priority queue. The operation traverses the linked list starting from the head, comparing each element to find the minimum value. Once the minimum element is found, it is removed from the list, and the linked list pointers are updated accordingly. The minimum value is then returned.
+
+On function entry, we either steal an active cursor (and resume the traversal)or create a new cursor starting at the head of the list (code excluded for brevity).
+
+During traversal, according to @eq:initialized reachable nodes headed by $H$ are initialized, thus `unsafe { self.data[next_index as usize].assume_init() }` is a safe operation. After the cursor has been updated, we introduce a synchronized preemption point.
+On resume, if the cursor was stolen (indicated by a `None` value), we break the loop, else we continue the traversal.
+
+Once the traversal is complete, if the cursor was stolen we return directly with a `None` value (as the element to dequeue has already been removed and handled at the preemption point. Else, we proceed to remove the minimum element, safety invariants can be argued  analogously with the `insert` operation and left out for brevity.
 
 #figure(
   placement: none,
@@ -472,143 +481,32 @@ Manipulation of the priority queue is protected by a (global) critical section, 
   pub fn extractMin(&mut self, mock_test: MockTest) -> Option<T> {
       CsSingleCore::with(|mut cs| {
           // steal or create new cursor
-
           // search minimal element in loop
           while let Some(next_index) = self.next[current_index as usize] {
-                let next_value = unsafe { self.data[next_index as usize].assume_init() };
-                println!(
-                    "extractMin: -- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
-                    self.cursor, current_index, next_index, next_value
-                );
+              let next_value = unsafe { self.data[next_index as usize].assume_init() };
+              if next_value < self.cursor.unwrap().min_value {
+                  self.cursor = Some(Cursor {
+                      min_value: next_value,
+                      min_index: Some(current_index),
+                      current_index: next_index,
+                  });
+              }
+              self.cursor.replace(Cursor {
+                  current_index: next_index,
+                  ..self.cursor.unwrap()
+              });
 
-                if next_value < self.cursor.unwrap().min_value {
-                    println!(
-                        "update cursor to next_index {}, next_value {:?}",
-                        next_index, next_value
-                    );
-                    self.cursor = Some(Cursor {
-                        min_value: next_value,
-                        min_index: Some(current_index),
-                        current_index: next_index,
-                    });
-                }
+              CsSingleCore::preemption_point(&_cs);
 
-                current_index = next_index;
-
-
-                (cs, _) = CsSingleCore::preemption_region(cs, || { });
-
-                // restore state from cursor
-                if self.cursor.is_none() {
-                    break;
-                }
-            }
-
-          //
-          // reset cursor to None
+              if let Some(cursor) = self.cursor {
+                  current_index = cursor.current_index;
+              } else {
+                  break;
+              }
+          }
+          // retire cursor (None value)
           // dequeue and return minimal element if any
       }
-
-
-            println!("extractMin: cursor {:?}", self.cursor);
-
-            while let Some(next_index) = self.next[current_index as usize] {
-                let next_value = unsafe { self.data[next_index as usize].assume_init() };
-                println!(
-                    "extractMin: -- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
-                    self.cursor, current_index, next_index, next_value
-                );
-
-                if next_value < self.cursor.unwrap().min_value {
-                    println!(
-                        "update cursor to next_index {}, next_value {:?}",
-                        next_index, next_value
-                    );
-                    self.cursor = Some(Cursor {
-                        min_value: next_value,
-                        min_index: Some(current_index),
-                        current_index: next_index,
-                    });
-                }
-
-                current_index = next_index;
-
-                // CsSingleCore::preemption_point(&_cs);
-                (cs, _) = CsSingleCore::preemption_region(cs, || {
-                    println!("-- preemption section in extractMin --");
-                    match mock_test {
-                        MockTest::None => {}
-                        MockTest::Insert(value) => {
-                            println!("-------------- mock insert {} in preemption section", value);
-                            let _ = self.insert(value);
-                        }
-                        MockTest::Pop => {
-                            println!("-------------- mock pop in preemption section");
-                            let val = self.extractMin(MockTest::None);
-                            println!(
-                                "-------------- mock pop extracted value {:?} in preemption section",
-                                val
-                            );
-                            assert!(
-                                self.cursor.is_none(),
-                                "cursor should be None after pop in preemption section"
-                            );
-                        }
-                    }
-                });
-
-                // restore state from cursor
-                if self.cursor.is_none() {
-                    break;
-                }
-            }
-
-            if let Some(cursor) = self.cursor {
-                println!("extract at cursor {:?}", cursor);
-
-                if let Some(current) = cursor.min_index {
-                    // extract and free node at current
-                    let next = self.next[current as usize];
-                    println!(
-                        "current is not head, extract node at current {} with next {:?}",
-                        current, next
-                    );
-
-                    // head should not be changed since we have traversed it
-                    self.next[current as usize] = self.next[next.unwrap() as usize]; // update next of current to skip the extracted node
-
-                    // update free list to include the extracted node
-                    self.next[next.unwrap() as usize] = self.free;
-                    self.free = next;
-
-                    if self.tail == next {
-                        println!("update tail to cursor index {:?}", cursor.min_index);
-                        self.tail = cursor.min_index;
-                    }
-                } else {
-                    // extract and free last node
-                    let free_index = self.head.unwrap();
-                    let next = self.next[free_index as usize];
-                    println!(
-                        "extract last node, free index {}, next {:?}",
-                        free_index, next
-                    );
-                    self.next[free_index as usize] = self.free; // add to free list
-                    self.free = Some(free_index); // update free to point to the new free node
-
-                    self.head = next; // update head to next node
-                    if self.tail == Some(free_index) {
-                        println!("update tail to cursor index {:?}", cursor.min_index);
-                        self.tail = cursor.min_index;
-                    }
-                }
-                self.cursor = None;
-                Some(cursor.min_value)
-            } else {
-                None
-            }
-        })
-    }
   }
   ```,
   caption: [Priority Queue `extractMin` operation.],
