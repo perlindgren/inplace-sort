@@ -425,7 +425,7 @@ The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of th
 === API: `const fn new() -> Self`
 
 Written entirely in safe Rust (implementation left out for brevity), the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
-#footnote[While only a subset of the Rust language is currently supported in _const context_, it is sufficient for our implementation.]
+#footnote[While only a subset of the Rust language is currently supported in _const context_, it proved sufficient for our implementation.]
 
 The safety invariants @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
 
@@ -434,15 +434,185 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 
 === API: `insert(&mut self, value: T) -> Result<(), ()>`
 
-The `insert` operation is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
+The `insert` operation (@fig:pq_insert) is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
 
-The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with with invariants @eq:alloc_free and @eq:alloc_head. The invariant @eq:nodes holds by  @eq:alloc_free  and  @eq:alloc_head transitively. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
+The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with with invariants @eq:alloc_free and @eq:alloc_head. The invariant @eq:nodes holds by @eq:alloc_free (alloc) and  @eq:alloc_head (enqueue)transitively. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
 
 Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
 
+#figure(
+  placement: none,
+  ```rust
+   fn insert(&mut self, value: i32) -> Result<(), Error> {
+       critical_section::with(|_cs| {
+           let new_index = self.free.ok_or(Error::QueueFull)?;
+
+           self.data[new_index as usize] = MaybeUninit::new(value);
+           self.free = self.next[new_index as usize];
+           self.next[new_index as usize] = None; // new node points to None
+           if let Some(tail_index) = self.tail {
+               self.next[tail_index as usize] = Some(new_index); // old tail points to new node
+           } else {
+               self.head = Some(new_index);
+           }
+           self.tail = Some(new_index); // if the queue was empty, set tail to new node
+
+           Ok(())
+       })
+   }
+  ```,
+  caption: [Priority Queue `insert` operation.],
+) <fig:pq_insert>
+
 === API: `extractMin(&mut self) -> Option<T> {`
 
+#figure(
+  placement: none,
+  ```rust
+  pub fn extractMin(&mut self, mock_test: MockTest) -> Option<T> {
+      CsSingleCore::with(|mut cs| {
+          // steal or create new cursor
 
+          // search minimal element in loop
+          while let Some(next_index) = self.next[current_index as usize] {
+                let next_value = unsafe { self.data[next_index as usize].assume_init() };
+                println!(
+                    "extractMin: -- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
+                    self.cursor, current_index, next_index, next_value
+                );
+
+                if next_value < self.cursor.unwrap().min_value {
+                    println!(
+                        "update cursor to next_index {}, next_value {:?}",
+                        next_index, next_value
+                    );
+                    self.cursor = Some(Cursor {
+                        min_value: next_value,
+                        min_index: Some(current_index),
+                        current_index: next_index,
+                    });
+                }
+
+                current_index = next_index;
+
+
+                (cs, _) = CsSingleCore::preemption_region(cs, || { });
+
+                // restore state from cursor
+                if self.cursor.is_none() {
+                    break;
+                }
+            }
+
+          //
+          // reset cursor to None
+          // dequeue and return minimal element if any
+      }
+
+
+            println!("extractMin: cursor {:?}", self.cursor);
+
+            while let Some(next_index) = self.next[current_index as usize] {
+                let next_value = unsafe { self.data[next_index as usize].assume_init() };
+                println!(
+                    "extractMin: -- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
+                    self.cursor, current_index, next_index, next_value
+                );
+
+                if next_value < self.cursor.unwrap().min_value {
+                    println!(
+                        "update cursor to next_index {}, next_value {:?}",
+                        next_index, next_value
+                    );
+                    self.cursor = Some(Cursor {
+                        min_value: next_value,
+                        min_index: Some(current_index),
+                        current_index: next_index,
+                    });
+                }
+
+                current_index = next_index;
+
+                // CsSingleCore::preemption_point(&_cs);
+                (cs, _) = CsSingleCore::preemption_region(cs, || {
+                    println!("-- preemption section in extractMin --");
+                    match mock_test {
+                        MockTest::None => {}
+                        MockTest::Insert(value) => {
+                            println!("-------------- mock insert {} in preemption section", value);
+                            let _ = self.insert(value);
+                        }
+                        MockTest::Pop => {
+                            println!("-------------- mock pop in preemption section");
+                            let val = self.extractMin(MockTest::None);
+                            println!(
+                                "-------------- mock pop extracted value {:?} in preemption section",
+                                val
+                            );
+                            assert!(
+                                self.cursor.is_none(),
+                                "cursor should be None after pop in preemption section"
+                            );
+                        }
+                    }
+                });
+
+                // restore state from cursor
+                if self.cursor.is_none() {
+                    break;
+                }
+            }
+
+            if let Some(cursor) = self.cursor {
+                println!("extract at cursor {:?}", cursor);
+
+                if let Some(current) = cursor.min_index {
+                    // extract and free node at current
+                    let next = self.next[current as usize];
+                    println!(
+                        "current is not head, extract node at current {} with next {:?}",
+                        current, next
+                    );
+
+                    // head should not be changed since we have traversed it
+                    self.next[current as usize] = self.next[next.unwrap() as usize]; // update next of current to skip the extracted node
+
+                    // update free list to include the extracted node
+                    self.next[next.unwrap() as usize] = self.free;
+                    self.free = next;
+
+                    if self.tail == next {
+                        println!("update tail to cursor index {:?}", cursor.min_index);
+                        self.tail = cursor.min_index;
+                    }
+                } else {
+                    // extract and free last node
+                    let free_index = self.head.unwrap();
+                    let next = self.next[free_index as usize];
+                    println!(
+                        "extract last node, free index {}, next {:?}",
+                        free_index, next
+                    );
+                    self.next[free_index as usize] = self.free; // add to free list
+                    self.free = Some(free_index); // update free to point to the new free node
+
+                    self.head = next; // update head to next node
+                    if self.tail == Some(free_index) {
+                        println!("update tail to cursor index {:?}", cursor.min_index);
+                        self.tail = cursor.min_index;
+                    }
+                }
+                self.cursor = None;
+                Some(cursor.min_value)
+            } else {
+                None
+            }
+        })
+    }
+  }
+  ```,
+  caption: [Priority Queue `extractMin` operation.],
+) <fig:pq_extractMin>
 
 // This is by far the most complex operation. We will cover it by covering the possible cases in a
 // non-concurrent context, and then discuss the concurrent case.

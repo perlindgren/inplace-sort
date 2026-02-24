@@ -153,7 +153,10 @@ impl<const N: usize> PriorityQueue<N, i32> {
                     });
                 }
 
-                current_index = next_index;
+                self.cursor.replace(Cursor {
+                    current_index: next_index,
+                    ..self.cursor.unwrap()
+                });
 
                 // CsSingleCore::preemption_point(&_cs);
                 (cs, _) = CsSingleCore::preemption_region(cs, || {
@@ -180,7 +183,13 @@ impl<const N: usize> PriorityQueue<N, i32> {
                 });
 
                 // restore state from cursor
-                if self.cursor.is_none() {
+                if let Some(cursor) = self.cursor {
+                    println!(
+                        "restore state from cursor after preemption, cursor {:?}",
+                        cursor
+                    );
+                    current_index = cursor.current_index;
+                } else {
                     break;
                 }
             }
