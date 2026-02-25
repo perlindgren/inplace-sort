@@ -476,7 +476,7 @@ The implementation is thread-safe, thus allows for concurrent access from multip
 
 == Work Stealing
 
-Dispatch handlers execute concurrently, where a higher priority dispatch handler may preempt an ongoing _extractMin_ operation. The higher priority handler steals the read cursor and the current minimum value encountered, continuing the traversal on behalf of the preempted _extractMin_ operation.
+Dispatch handlers execute concurrently, where a higher priority dispatch handler may preempt an ongoing _extractMin_ operation. The higher priority handler steals the read cursor including the reader pointer, the current minimum value encountered and a _previous pointer_---a pointer to the node previous to the current minimum value containing node. It then continues the traversal on behalf of the preempted _extractMin_ operation.
 
 Once the traversal is complete, the minimum element, if any, is removed from the list, protected by a critical section. The critical section is of constant time $cal(O)(1)$, as it only involves a constant number of node updates. The stolen read cursor is set to indicate that the steal is complete, thus the resumed _extractMin_ can immediately return without additional traversal. This queue is therefore intended for single-core systems, where only a single task may execute at any given time, and it is therefore unnecessary to attempt to dispatch multiple tasks simultaneously.
 
@@ -487,42 +487,46 @@ The restart-free implementation ensures that the amortized work for _extractMin_
 Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness. In the following we will outline key safety
 invariants for our implementation based on the below invariants:
 
-Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the head pointer, free pointer, and tail pointer, respectively.
+Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Let $italic("Cur")$ be the cursor used by _extractMin_, and if it's not empty, let $C$, and $italic(min)$,  $italic("prev")$ be the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively. For $X in N$, denote ${X ->^* } =$#box[${n in N mid(|) exists space k in NN_0 : "next"^k (X) = n }$] and ${X ->^+ } = $#box[${n in N mid(|) exists space k in NN_+ : "next"^k (X) = n }$]. If $X$ is empty, both notations equal the empty set $emptyset$.
 
 #math.equation(
   block: true,
-  $N <--> \{H ->^*\} union \{F ->^*\}$,
+  $N = {H ->^*} union {F ->^*} "and" {H ->^*} inter {F ->^*} = emptyset$,
 )<eq:nodes>
 
 #math.equation(block: true, $forall n in \{H ->^*\}, "initialized(n)"$)<eq:initialized>
 
-#math.equation(
-  block: true,
-  $A in \{F ->^*\} and \{F ->^*\} space <--> space \{A\} union \{F' ->^*\}$,
-)<eq:alloc_free>
+#math.equation(block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$)<eq:no-loops>
 
 #math.equation(
   block: true,
-  $\{A\} union \{H' ->^*\} space <--> space \{H ->^*\} and A in \{H ->^*\}$,
-)<eq:alloc_head>
-
-#math.equation(
-  block: true,
-  $not (T ->^* emptyset) --> T == H ->^*$,
+  $T "is not empty" => T in {H ->^*} "and" "next"(T) "is empty"$,
 )<eq:tail_in_head>
 
-@eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer ($H->^*$) and the set of nodes reachable from the free pointer ($H->^*$). As a corollary, we can infer that nodes reachable from $H$ head ($F$ free) are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust.
+#math.equation(
+  block: true,
+  $italic("Cur") "is not empty" => cases(
+    C in {H -> *},
+    italic(min) = min("value"(n) mid(|) n in {H ->^*} \\ {C ->^+}),
+    italic("prev") "is empty and" italic(min) = "value"(H)\, "or" "value"("next"("prev")) = italic(min)
+  )
+  $
+)<eq:cursor>
 
-In @eq:initialized, $H->^*$ denotes the set of nodes reachable from the head pointer. Rust requires that all values are initialized before they can be safely read. Therefore, the invariant stipulates that all nodes reachable from the head pointer are initialized with a valid value according to the defined type. This invariant is crucial for ensuring that we never read uninitialized memory, which would lead to undefined behavior (@UB) in Rust.
+@eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer and the set of nodes reachable from the free pointer. As a corollary, we can infer that nodes reachable from $H$ head and $F$ free are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust. Allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
 
-Thus by upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
+@eq:initialized states that the set of nodes reachable from the head pointer are all initialized with a valid value according to the defined type. Rust requires that all values are initialized before they can be safely read. By upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
 
-@eq:alloc_free applies to allocation(free), right(left) implication, where $A$ denotes a node in the free list $F ->^*$, and $F' ->^*$ relates the state after(before) allocation(free). The invariant stipulates that $A$ is reachable from the free pointer before(after) the transition. This invariant is crucial for ensuring that we never access memory that has been deallocated, which would lead to @UB in Rust.
-Analogously, @eq:alloc_head, cover enqueue(dequeue) of nodes reachable from the head pointer $H$. Together with @eq:nodes, allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
+@eq:no-loops states that there are no loops in the lists starting at $T$ and $F$. This is essential to guarantee $cal(O)(n)$ for the _extractMin_ operation.
 
-Finally, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it points to the *last* node in the list reachable from the head pointer $H$. This invariant is crucial for ensuring that we can safely assume that appended nodes are inserted at the tail of the list reachable from $H$.
+Assuming @eq:no-loops, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it points to the *last* node in the list reachable from the head pointer $H$. This invariant is crucial for ensuring that we can safely assume that appended nodes are inserted at the tail of the list reachable from $H$.
 
-For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants @eq:initialized, @eq:alloc_free, @eq:alloc_head, and @eq:tail_in_head. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
+Finally, @eq:cursor stipulates that the cursor is either empty, or it the assiated data has three qualities:
+- the reader pointer points at some node reachable from the head pointer,
+- the minimum value encountered is indeed the minimum value among nodes preceeding and including the last inspected node, and
+- the _previous pointer_ points at the node before the node containing the minimum value encountered, or is empty if the minimum value is found at the head of the list.
+
+For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants  @eq:nodes, @eq:initialized, @eq:no-loops, @eq:tail_in_head and @eq:cursor. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
 
 == Data Structure and API
 
@@ -557,7 +561,7 @@ The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of th
 Written entirely in safe Rust (implementation left out for brevity), the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
 #footnote[While only a subset of the Rust language is currently supported in _const context_, it proved sufficient for our implementation.]
 
-The safety invariants @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
+The safety invariants in @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
 
 Blocking time is not a concern for the `new` function. In case of static allocation, the initialization is performed before `main` is executed, while in case of heap or stack allocation, the queue is not accessible until the `new` function returns, thus there is no concurrent access to the queue during initialization.
 
@@ -566,7 +570,8 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 
 The `insert` operation (@fig:pq_insert) is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
 
-The `insert` operation allocates (removes) a node $A$ from the free list ($F$), and inserts it at the tail ($T$) of the allocated list ($H$), along with with invariants @eq:alloc_free and @eq:alloc_head. The invariant @eq:nodes holds by @eq:alloc_free (alloc) and  @eq:alloc_head (enqueue)transitively. _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
+The `insert` operation allocates (removes) a node $A$ from the free list ($F$), initializes it and inserts it at the tail ($T$) of the allocated list ($H$), honoring @eq:nodes and @eq:no-loops.
+_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds. 
 
 Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
 
@@ -601,9 +606,12 @@ Manipulation of the priority queue is protected by a (global) critical section, 
 On function entry, we either steal an active cursor (and resume the traversal)or create a new cursor starting at the head of the list (code excluded for brevity).
 
 During traversal, according to @eq:initialized reachable nodes headed by $H$ are initialized, thus `unsafe { self.data[next_index as usize].assume_init() }` is a safe operation. After the cursor has been updated, we introduce a synchronized preemption point.
+
 On resume, if the cursor was stolen (indicated by a `None` value), we break the loop, else we continue the traversal.
 
-Once the traversal is complete, if the cursor was stolen we return directly with a `None` value (as the element to dequeue has already been removed and handled at the preemption point. Else, we proceed to remove the minimum element, safety invariants can be argued  analogously with the `insert` operation and left out for brevity.
+Once the traversal is complete, if the cursor was stolen we return directly with a `None` value (as the element to dequeue has already been removed and handled at the preemption point. Else, we proceed to remove the minimum element and empty the cursor.
+
+A new cursor will uphold @eq:cursor. A stolen cursor that upholds @eq:cursor will uphold it after each step of the travelsal. After the preemption point, a new node might be added at the tail, but it does not affect @eq:cursor. When the minimum node is removed, the cursor is emptied, maintaining the invariant.
 
 Regarding complexity, the algorithm is trivially $cal(O)(N)$, as we need to traverse the entire list to find the minimum element. In case of preemption by another dispatch handler, the stealing mechanism allows the higher priority handler to continue the traversal on behalf of the preempted handler. The highest priority dispatch handler will execute to completion, set the stolen cursor to `None`, dequeue and return the minimum element. Thus, we can conclude that each element is inspected exactly once, which leads us to conclude that the (amortized) complexity remains $cal(O)(N)$, even in presence of preemptive execution among dispatch handlers. As an effect, the `extractMin` will always complete at the highest preemption level among the dispatch handlers, thus ensuring dispatch latency and jitter to be free of any priority inversion inferred by shared priority queue accesses.
 
