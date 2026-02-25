@@ -484,31 +484,36 @@ The restart-free implementation ensures that the amortized work for _extractMin_
 
 == Safety Invariants<sec:safety_invariants>
 
-Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness. In the following we will outline key safety
-invariants for our implementation based on the below invariants:
+Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness.
 
-Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Let $italic("Cur")$ be the cursor used by _extractMin_, and if it's not empty, let $C$, and $italic(min)$,  $italic("prev")$ be the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively. For $X in N$, denote ${X ->^* } =$#box[${n in N mid(|) exists space k in NN_0 : "next"^k (X) = n }$] and ${X ->^+ } = $#box[${n in N mid(|) exists space k in NN_+ : "next"^k (X) = n }$]. If $X$ is empty, both notations equal the empty set $emptyset$.
+In the following we will outline key safety invariants to ensure `unsafe` sections of the code are safe, and that the list works correcly even with preemption. The invariants apply to each point in time outside of a critical section, e.g. before and after each atomic operation on the list---at a preemption point.
+
+Let $N$ be the set of (statically) allocated nodes, and $H, F, T in N$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Two implentation agnostic functions descibe the linked structure of nodes that can have assigned values or be uninitialized. Let $italic("next"): N -> N union {emptyset}$ be a function defining the next node for each node. Where $V$ is any set of values, let $italic("data"): N harpoon.rt V$ be a function defining the value of the initialized nodes. Finally, let $italic("Cur")$ be the cursor used by _extractMin_, and if it's not empty, let $C$, and $italic(min)$,  $italic("prev")$ be the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively.
+
+For $X in N$, denote ${X ->^* } =$#box[${n in N mid(|) exists space k in NN_0 : italic("next")^k (X) = n }$] and ${X ->^+ } = $#box[${n in N mid(|) exists space k in NN_+ : italic("next")^k (X) = n }$]. If $X$ is empty, both notations equal the empty set $emptyset$.
+
+The invariants describing the data structure are:
 
 #math.equation(
   block: true,
   $N = {H ->^*} union {F ->^*} "and" {H ->^*} inter {F ->^*} = emptyset$,
 )<eq:nodes>
 
-#math.equation(block: true, $forall n in \{H ->^*\}, "initialized(n)"$)<eq:initialized>
+#math.equation(block: true, $forall n in \{H ->^*\}: n in "dom"(italic("data"))$)<eq:initialized>
 
 #math.equation(block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$)<eq:no-loops>
 
 #math.equation(
   block: true,
-  $T "is not empty" => T in {H ->^*} "and" "next"(T) "is empty"$,
+  $T "is not empty" => T in {H ->^*} "and" italic("next")(T) "is empty"$,
 )<eq:tail_in_head>
 
 #math.equation(
   block: true,
   $italic("Cur") "is not empty" => cases(
     C in {H -> *},
-    italic(min) = min("value"(n) mid(|) n in {H ->^*} \\ {C ->^+}),
-    italic("prev") "is empty and" italic(min) = "value"(H)\, "or" "value"("next"("prev")) = italic(min)
+    italic(min) = min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
+    italic("prev") "is empty and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
   )
   $
 )<eq:cursor>
@@ -556,6 +561,8 @@ For the implementation of the API operations, we have implemented allocation and
 The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of the queue is determined as a compile-time constant `N`. The `data` field is an array of `MaybeUninit<T>`, which allows us to manage uninitialized memory safely. The `next` field is an array of `Option<u16>`, which represents the linked list structure of the queue. The `head`, `tail`, and `free` fields hold indices to the head and the tail of the queue, and the head of the free list, respectively. The `Option<u16>` enum type allows us to leverage the Rust type system to represent the absence of a next node (`None` variant), thus avoiding the need for sentinel values and their associated risks of @UB.
 #footnote[This is just one possible implementation, alternatively we could pack the `data` and `next` fields into a single array of nodes, where each element is a struct containing both the value and the next pointer. However, we opted for the current design for its simplicity and clarity in illustrating the key concepts.]
 
+Reflecting the implementation to the formalization in @sec:safety_invariants ---the set nodes $N$ in the formalization correspond to indices $#text(`0`), ...,#text(`N-1`)$; $H$, $T$ and $F$ correspond to `head`, `tail` and `free`, respectively; $italic("next")(i), i in #text(`N`)$ corresponds to `next[i]`; $italic("data")(i), i in #text(`N`)$ corresponds to `data[i]`, and "empty" or $emptyset$ corresponds to `None`. Indices $#text(`i`) in #text(`N`)$ for which `data[i]` is uninitialized, do not belong in $"dom"(italic("data"))$.
+
 === API: `const fn new() -> Self`<sec:new>
 
 Written entirely in safe Rust (implementation left out for brevity), the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
@@ -565,6 +572,7 @@ The safety invariants in @sec:safety_invariants are trivially upheld by the `new
 
 Blocking time is not a concern for the `new` function. In case of static allocation, the initialization is performed before `main` is executed, while in case of heap or stack allocation, the queue is not accessible until the `new` function returns, thus there is no concurrent access to the queue during initialization.
 
+Formally, the queue is initialized as $H = emptyset, T = emptyset, F = n in N$, $italic("Cur") = emptyset$, $"dom"(italic("data")) = emptyset$ and $italic("next")$ is initialized in whatever way that satisfies @eq:nodes and @eq:no-loops.
 
 === API: `insert(&mut self, value: T) -> Result<(), ()>`<sec:insert>
 
@@ -574,6 +582,58 @@ The `insert` operation allocates (removes) a node $A$ from the free list ($F$), 
 _Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds. 
 
 Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
+
+Formally, the _insert value $v in V$_ is a manipulation of $(H, T, F, italic("next"), italic("data"), italic("Cur"))$, $F != emptyset$, where the next state, denoted by $(H', T', F', italic("next"'), italic("data"'), italic("Cur"'))$ is defined as described in @table:insert.
+
+
+#{
+  show table.cell: set text(size: 9pt)
+
+  let fig = figure(
+    table(columns: 3, gutter: 25pt,
+    [
+      #math.equation(block: true, numbering: none)[$
+      &T' &=& F \
+      &F' &=& italic("next")(F) \
+      &italic("data")'(x) &=& cases(
+        italic("data")(x)  &"if" x != F,
+        v &"if" x = F
+      ) \
+      &italic("Cur"') &=&  italic("Cur")
+      $]
+    ],
+    [
+      #box[Case 1: $H = emptyset$:
+      #math.equation(block: true, numbering: none)[$
+      &H' &=& F \
+      &"next'"(x) &=& cases(
+        emptyset &"if" x = F,
+        italic("next")(x) &"if" x != F
+      )
+      $]]
+    ],
+    [
+      #box[
+      Case 2: $H != emptyset$:
+      #math.equation(block: true, numbering: none)[$
+      &H' &=& H \
+      &"next'"(x) &=& cases(
+        F &"if" x = T,
+        emptyset &"if" x = F,
+        italic("next")(x) &"otherwise"
+      )
+      $]]
+    ]
+    ),
+    caption: "The insert v operation"
+  )
+  [#fig <table:insert>]
+}
+
+
+
+
+
 
 #figure(
   placement: none,
@@ -653,6 +713,135 @@ Moreover, the for each element traversed we cross a preemption point, ensuring t
   ```,
   caption: [Priority Queue `extractMin` operation.],
 ) <fig:pq_extractMin>
+
+Formally, _extractMin_ is divided into two atomic operations on $(H, T, F, italic("next"), italic("data"), italic("Cur"))$: one step travelsal of $italic("Cur")$ on the list, as in @table:cursor-operations and extracting the minimum valued node if the cursor pointer is at the tail, as in @table:extract-min.
+
+Each of the operations descibed in @table:insert, @table:cursor-operations and @table:extract-min assume the invariants in @sec:safety_invariants and leave the invariants unchanged. 
+
+#{
+  show table.cell: set text(size: 9pt)
+
+  let fig = figure(
+    table(columns: 2, gutter: 10pt,
+    table.cell(colspan: 2)[
+      Case 1: $"Cur" = emptyset$ 
+    ],
+    table.cell(colspan: 2)[
+      Case 2: $"Cur" = (C, italic("prev"), min)$
+    ],
+    [
+      *Case 1a:* $H = emptyset$
+
+      #math.equation(block: true, numbering: none)[$italic("Cur"') =
+        (H, emptyset, italic("data")(H))
+      $]
+    ],
+    [
+      *Case 1b:* $H != emptyset$
+
+      #math.equation(block: true, numbering: none)[$italic("Cur"') =
+        emptyset
+      $]
+    ],
+    table.cell(colspan: 2)[
+      *Case 2:* $italic("Cur") = (C, italic("min"), italic("prev"))$
+    ],
+    table.cell(colspan: 2)[
+      *Assuming* $C != T$
+
+      #math.equation(block: true, numbering: none)[$
+      &"Cur'" &=& (italic("next")(C), min(min, italic("data")(italic("next")(C))), italic("prev"')),
+      \
+      &"where"
+      \
+      &italic("prev"') &=& cases(
+        italic("prev") &"if" min &=& min(min\, italic("data")(italic("next")(C))),
+        C &"if" italic("data")(italic("next")(C)) &=& min(min\, italic("data")(italic("next")(C)))
+      )
+      $]
+    ]
+    ),
+    caption: "Cursor traversing the list"
+  )
+  [#fig <table:cursor-operations>]
+}
+
+#{
+  show table.cell: set text(size: 9pt)
+
+  let fig = figure(
+    table(columns: 2, gutter: 10pt,
+    table.header(),
+    table.cell(colspan: 2)[
+      *Case 0:* $H = emptyset$
+
+      State does not change,
+      _extractMin_ returns $emptyset$
+    ],
+    [
+      *Case 1:* $italic("prev") = emptyset$
+      #math.equation(block: true, numbering: none)[$
+        &H' &=& cases(
+          T &"if" T = H,
+          italic("next")(H) &"if" T!=H
+        )\
+        &T' &=& T \
+        &F' &=& H \
+        &"next'"(x) &=& cases(
+          F &"if" x = H,
+          italic("next")(x) &"if" x != H
+        ) \
+        &italic("data")' &=& italic("data") \
+        &italic("Cur") &=& emptyset
+
+      $]
+
+    ],
+    [
+      *Case 2:* $italic("prev") != emptyset$
+
+      #math.equation(block: true, numbering: none)[$
+        &H' &=& H \
+        &T' &=& cases(
+          italic("prev") &"if" T = italic("next")(italic("prev")),
+          T &"if" T != italic("next")(italic("prev"))
+        ), \
+        &F' &=& H \
+        &"next'"(x) &=& cases(
+          F &"if" x = H,
+          italic("next")(italic("next")(italic("prev"))) &"if" x = italic("prev"),
+          italic("next")(x) &"otherwise"
+        ) \
+        &italic("data")' &=& italic("data") \
+        &italic("Cur") &=& emptyset
+      $]
+    ],
+    [
+      Return $italic(min)$
+    ],
+    [
+      Return $italic(min)$
+    ]
+    ),
+    caption: "Extracting the minimum"
+  )
+  [#fig <table:extract-min>]
+}
+
+
+
+
+
+// #set enum(numbering: "a)")
+// + in figure shows the initial state after `new`, where the queue is empty.
+// + shows the state after `insert(42)`.
+// + shows the state after `insert(1337)`.
+// + shows the state after `insert(38)`.
+// + shows the state after `extractMin()`.
+// + shows the state after `extractMin()`.
+// + shows the state after `extractMin()`. At this point the queue is empty again. At this point `min()` returns `None`, and `extractMin()` returns with an error.
+
+
 
 #pagebreak()
 
