@@ -61,14 +61,7 @@
 )
 
 #abstract: [
-In @DP scheduling, kernels generally rely on priority queues to select the task to be executed.
-The choice of queue implementation introduces tradeoffs with respect to software overhead,
-memory usage and blocking times. A key consideration is thread-safety and memory safety. In this
-paper, we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$
-upper bound on inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and
-$cal(O)(N)$ `extractMin` operations. The queue is implemented as a linked list backed by a
-fixed-size array, and can be allocated either statically, on the heap or on the stack. Potential
-applications include real-time scheduling, event management, and graph algorithms where
+In @DP scheduling, kernels generally rely on priority queues to select the task to be executed. The choice of queue implementation introduces tradeoffs with respect to software overhead, memory usage and blocking times. A key consideration is thread-safety and memory safety. In this paper, we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$ upper bound on inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin` operations. The queue is implemented as a linked list backed by a fixed-size array, and can be allocated either statically, on the heap or on the stack. Potential applications include real-time scheduling, event management, and graph algorithms where
 predictable and minimal blocking times are paramount.
 
 For the implementation we leverage on the strong typing and memory safety guarantees of the Rust systems level programming language. In order to obtain constant upper bound blocking we propose an extension to the `critical-section` crate, introducing structured and well defined preemption points and preemption regions within a critical section. Finally, we define a set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety of the implementation.
@@ -91,28 +84,12 @@ For the implementation we leverage on the strong typing and memory safety guaran
 // )
 
 = Introduction
-In embedded and real-time systems, @DP scheduler kernel implementations typically rely on @PQ:pla to
-manage incoming task arrivals and retrieve the highest priority task to be executed. These data
-structures are challenging to implement correctly and efficiently in a concurrent environment; they
-have therefore been an area of extensive research.
+In embedded and real-time systems, @DP scheduler kernel implementations typically rely on @PQ:pla to manage incoming task arrivals and retrieve the highest priority task to be executed. These data structures are challenging to implement correctly and efficiently in a concurrent environment; they have therefore been an area of extensive research.
 
-One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing
-concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On
-single-core systems, these locks are typically implemented as critical sections where the lock-region executes with interrupts disabled. However, schedulability criteria and task execution
-jitter are generally dependent on the length of the _longest_ critical section in a given system; it
-is therefore of interest to limit worst-case lock duration to a strict minimum.
+One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On single-core systems, these locks are typically implemented as critical sections where the lock-region executes with interrupts disabled. However, schedulability criteria and task execution jitter are generally dependent on the length of the _longest_ critical section in a given system; it is therefore of interest to limit worst-case lock duration to a strict minimum.
 
-Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure
-presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert`
-and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed
-infallible; resource-limited embedded systems rarely implement truly infallible @CAS operations,
-such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm.
-Other implementations use skip-lists and randomized access to amortize asymptotic time complexity
-@sundellFastLockfreeConcurrent2003. Some work has also gone into limiting a @PQ's I/O operations
-between an internal cache and external memory, while retaining a favorable amortized time complexity
-for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a PQ, in
-@harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with
-node manipulations also based on @CAS operations. We however deem these approaches unsuitable for hard real-time kernel implementations targeting single-core @COTS hardware, as the worst case blocking time is unbounded when accounting for retried operations.
+Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure  presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert` and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed infallible; resource-limited embedded systems rarely implement truly infallible @CAS operations, such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm. Other implementations use skip-lists and randomized access to amortize asymptotic time complexity
+@sundellFastLockfreeConcurrent2003. Some work has also gone into limiting a @PQ's I/O operations between an internal cache and external memory, while retaining a favorable amortized time complexity for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a PQ, in @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with node manipulations also based on @CAS operations. We however deem these approaches unsuitable for hard real-time kernel implementations targeting single-core @COTS hardware, as the worst case blocking time is unbounded when accounting for retried operations.
 
 In this paper we propose a concurrent priority queue implementation leveraging Rust's strong typing and memory safety guarantees. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
@@ -126,12 +103,9 @@ Key contributions of this work include:
 
 = Background and Motivation -- @EDF:lo Scheduling
 <sec:background>
-@PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
-priority queues, elements are allowed to be extracted under some given ordering. Classical
-implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
+@PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common priority queues, elements are allowed to be extracted under some given ordering. Classical implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
-We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt
-handlers:
+We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt handlers:
 + They are first signalled to an arrival handler $A_i$. This handler captures the task's arrival timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue the task in a priority queue for later retrieval and execution (@fig:arrival-handler and @fig:interrupt-handler top).
 + As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch handler take as scheduling decision. If `min(PQ)` has an absolute deadline which is shorter than the next task to execute's deadline, then the highest priority task is extracted from `extractMin(PQ)` and dispatched (@fig:interrupt-handler bottom).
 + The priority of arrival and dispatch handlers is determined according to relative task deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize time-stamp jitter.
@@ -139,11 +113,9 @@ handlers:
 Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
 following properties:<sec:requirements>
 
-- Support for concurrent access from multiple execution contexts (e.g., threads or interrupts
-  handlers).
+- Support for concurrent access from multiple execution contexts (e.g., threads or interrupts handlers).
 - Bounded blocking times for concurrent access, with constant time $cal(O)(1)$ upper bounds.
-- Implementation should not depend on dynamic memory allocations, and should be resource efficient
-  in terms of both memory and CPU usage.
+- Implementation should not depend on dynamic memory allocations, and should be resource efficient in terms of both memory and CPU usage.
 
 #figure(
   placement: auto,
@@ -534,9 +506,7 @@ By performing the _extractMin_ operation at the level of the currently highest p
 
 = Conclusions
 
-In this short paper we have sketched a concurrent priority queue implementation, and argued constant
-time blocking times for all operations. The in-place designs allows for efficient memory usage and
-static allocation, meeting our requirements for hard real-time scheduling applications. While priority queues using unsorted in-place array-based linked lists are well understood, the novelty here resides with the simplistic concurrent design, matching concrete requirements for hard-real time scheduling on single-core @COTS hardware. In the context of embedded hard real-time systems, the anticipated number of tasks is relatively small (often ranging from a hand-full to a few dozens), overhead of $cal(O)(N)$ for _extractMin_ is expected to be acceptable, while the constant time blocking times for all operations are expected to yield favorable scheduling performance.
+In this short paper we have sketched a concurrent priority queue implementation, and argued constant time blocking times for all operations. The in-place designs allows for efficient memory usage and static allocation, meeting our requirements for hard real-time scheduling applications. While priority queues using unsorted in-place array-based linked lists are well understood, the novelty here resides with the simplistic concurrent design, matching concrete requirements for hard-real time scheduling on single-core @COTS hardware. In the context of embedded hard real-time systems, the anticipated number of tasks is relatively small (often ranging from a hand-full to a few dozens), overhead of $cal(O)(N)$ for _extractMin_ is expected to be acceptable, while the constant time blocking times for all operations are expected to yield favorable scheduling performance.
 
 == Future work
 
