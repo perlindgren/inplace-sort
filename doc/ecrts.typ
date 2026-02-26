@@ -159,7 +159,7 @@ For our purpose, the priority queue is accessed from both arrival and dispatch h
 
 == Rust Embedded Ecosystem
 
-The Rust Embedded Working Group develops and maintains a set of foundational libraries and tools for embedded development in Rust. Among these, the `critical-section` crate provides a generic _critical section_ abstraction. The crate defines a trait `Impl` to be implemented for each supported target architecture (@fig:rust-cs-trait). In context of single-core bare-metal embedded systems, the `acquire` and `release` functions associated to the `Impl` trait are typically implemented by disabling and enabling interrupts, respectively. By design, exactly one implementation of the `Impl` trait must be provided for a given application. This property is crucial for ensuring that the critical section abstraction is sound, as it prevents the user from accidentally mixing multiple (conflicting) implementations, which could/would lead to undefined behavior (@UB) in Rust.  Applications breaking the uniqueness property are rejected at compile time.
+The Rust Embedded Working Group develops and maintains a set of foundational libraries and tools for embedded development in Rust. Among these, the `critical-section` crate provides a generic _critical section_ abstraction. The crate defines a trait `Impl` to be implemented for each supported target architecture (@fig:rust-cs-trait). In context of single-core bare-metal embedded systems, the `acquire` and `release` functions associated to the `Impl` trait are typically implemented by disabling and enabling interrupts, respectively. By design, exactly one implementation of the `Impl` trait must be provided for a given application. This property is crucial for ensuring that the critical section abstraction is sound, as it prevents the user from accidentally mixing multiple (conflicting) implementations, which could/would lead to undefined behavior (@UB) in Rust. Any attempt to break the uniqueness property is rejected at compile time.
 
 Leveraging on Rust *zero-cost* abstractions, the `critical_section` crate defines a closure based API enforcing strict nesting to ensure that interrupt state is properly restored. The user provided closure takes a `CriticalSection` (`CS`) token argument - a zero-sized type that serves as a proof of code execution under protection of mutual exclusion. The `CS` token argument can neither be leaked outside of the critical section, nor created (forged) by user code.
 
@@ -174,69 +174,121 @@ Leveraging on Rust *zero-cost* abstractions, the `critical_section` crate define
       unsafe fn release(restore_state: RawRestoreState);
   }
   ```,
-  caption: [Rust `Impl` trait definition for a critical section implementation.],
+  caption: [`critical-section` `Impl` trait definition.],
 ) <fig:rust-cs-trait>
 
 #figure(
   placement: none,
   ```rust
   critical_section::with(|cs| {
-    // This code runs within a critical section.
+      // This code runs within a critical section.
   });
   ```,
-  caption: [Rust, minimal critical section example.],
+  caption: [Minimal example.],
 ) <fig:rust-critical-section>
 
-== Preemption Points and Regions
+== Preemption Regions
 
-In this work we propose an extension to the `critical section` abstraction, to provide preemption points and preemption regions within a critical section while maintaining the advantages of structured nesting. As a proof on concept we base the implementation (@fig:rust-preemption) on the current `critical_section` crate.
+In this work we propose an extension to the `critical section` abstraction, to provide preemption regions within a critical section while maintaining the advantages of structured nesting.
 
+In order to generalize the design, we reformulate the `Impl` trait definition as seen in @fig:rust-cs-trait. The new API gives as the ability to in a deterministic way enter and exit both critical sections and preemption regions (within critical sections). While a small change on the surface, this gives us the expressive power lacking in the original API.
 
 #figure(
   placement: none,
   ```rust
-  pub mod preemptive_region {
-      use super::*;
-      /// Executes a closure with preemption enabled, inside a critical section.
-      ///
-      /// # Safety
-      ///
-      /// By requiring the CriticalSection (CS) token, we ensure that `with` can only
-      /// be called from within a critical section.
-      ///
-      /// The CS token will mutably borrowed by the with function, thus
-      /// inaccessible within the closure `f`.
-      ///
-      /// Given the assumption that RestoreState::invalid() represents a states
-      /// where preemption is enabled, the closure `f` will thus execute:
-      ///
-      /// - Within a critical section
-      /// - With preemption enabled
-      /// - Without access to the CriticalSection token.
-      ///
+  pub unsafe trait Impl {
+      /// Should return the "cs enable" and "cs disable" restore states.
+      unsafe fn get_states() -> (RawRestoreState, RawRestoreState);
 
-      pub fn with<R>(cs: &mut CriticalSection, f: impl FnOnce() -> R) -> R {
-          unsafe { critical_section::release(RestoreState::invalid()) };
+      /// Should return the current state, later to be restored by `set_state`.
+      unsafe fn get_state() -> RawRestoreState;
 
-          let result = f();
-
-          unsafe { critical_section::acquire() };
-          result
-      }
-
-      /// Create a well-defined preemption point within a critical section.
-      ///
-      /// # Safety
-      ///
-      /// See `with` for safety properties.
-      ///
-      pub fn point(cs: &mut CriticalSection) {
-          with(cs, || {})
-      }
+      /// Should set the current state to the raw_restore_state.
+      unsafe fn set_state(raw_restore_state: RawRestoreState);
   }
+  ```,
+  caption: [Proposed `Impl` trait definition.],
+) <fig:rust-cs-new-trait>
+
+Based on the new `Impl` trait definition, we formulate the preemption region functionality along with a re-implementation of the original `with` function using the new API (@fig:rust-preemption).
+
+#figure(
+  placement: none,
+  ```rust
+  /// Execute closure `f` in a preemptive region inside a critical section.
+  ///
+  /// Nesting critical sections is allowed. The inner critical sections
+  /// are mostly no-ops since they're already protected by the outer one.
+  ///
+  /// # Panics
+  ///
+  /// This function panics if the given closure `f` panics. In this case
+  /// the preemption region is released before unwinding.
+  #[inline]
+  pub fn preemption_within<R>(_cs: &mut CriticalSection, f: impl FnOnce() -> R) -> R {
+      // Helper for making sure `release` is called even if `f` panics.
+      struct Guard {}
+
+      impl Drop for Guard {
+          #[inline(always)]
+          fn drop(&mut self) {
+              let disable = unsafe { get_states().1 };
+              unsafe { set_state(disable) }
+          }
+      }
+
+      let enable = unsafe { get_states().0 };
+      unsafe { set_state(enable) };
+      let _guard = Guard {};
+
+      f()
+  }
+
+  /// Execute empty closure in a preemptive region inside a critical section.
+  ///
+  /// Allows pending interrupts/context switches to be handled.
+  ///
+  /// See [`preemption_within`] for additional information.
+  #[inline]
+  pub fn preemption_point_within<R>(cs: &mut CriticalSection) {
+      preemption_within(cs, || {});
+  }
+
+  /// Execute closure `f` in a critical section.
+  ///
+  /// Nesting critical sections is allowed.
+  ///
+  /// # Panics
+  ///
+  /// This function panics if the given closure `f` panics. In this case
+  /// the critical section is released before unwinding.
+  #[inline]
+  pub fn with<R>(f: impl FnOnce(CriticalSection) -> R) -> R {
+      // Helper for making sure `release` is called even if `f` panics.
+      struct Guard {
+          state: RestoreState,
+      }
+
+      impl Drop for Guard {
+          #[inline(always)]
+          fn drop(&mut self) {
+              unsafe { set_state(self.state) }
+          }
+      }
+
+      let state = unsafe { get_state() };
+      let _guard = Guard { state };
+      let disable = unsafe { get_states().1 };
+      unsafe { set_state(disable) }
+
+      unsafe { f(CriticalSection::new()) }
+  }
+
   ```,
   caption: [Preemptive Region implementation.],
 ) <fig:rust-preemption>
+
+
 
 #figure(
   placement: none,
@@ -244,6 +296,7 @@ In this work we propose an extension to the `critical section` abstraction, to p
   pub struct Mutex<T> {
       data: core::cell::UnsafeCell<T>,
   }
+
   // This is not actually safe, but serves only as an illustration
   impl<T> Mutex<T> {
       pub const fn new(data: T) -> Self {
@@ -251,20 +304,30 @@ In this work we propose an extension to the `critical section` abstraction, to p
               data: core::cell::UnsafeCell::new(data),
           }
       }
-      pub fn read<R>(&self, _cs: &CriticalSection, f: impl FnOnce(&T) -> R) -> R {
-          // Immutable access the protected data within the critical section
+
+      pub fn with_ref<R>(&self, _cs: &CriticalSection, f: impl FnOnce(&T) -> R) -> R {
+          // Access the protected data within the critical section
           let data = unsafe { &*self.data.get() };
           f(data)
       }
-      pub fn write<R>(&self, _cs: &mut CriticalSection, f: impl FnOnce(&mut T) -> R) -> R {
-          // Mutable access to the protected data within the critical section
+
+      pub fn with_ref_mut<R>(&self, _cs: &mut CriticalSection, f: impl FnOnce(&mut T) -> R) -> R {
+          // Access the protected data within the critical section
           let data = unsafe { &mut *self.data.get() };
           f(data)
       }
   }
+
+  unsafe impl<T> Sync for Mutex<T> {}
   ```,
-  caption: [Mutex implementation.],
+  caption: [Proposed _Mutex_ implementation.
+  ],
 ) <fig:rust-mutex>
+
+@fig:rust-mutex, depicts the proposed _Mutex_ implementation. The design ensures compliance to the Rust borrow model: you may create multiple immutable references to the protected data, or a single mutable reference, but not both at the same time. This invariant is achieved through the method signatures, `&`/ `&mut CriticalSection` arguments to the `with_ref`/`with_ref_mut` methods respectively. While internally _unsafe_, the _Mutex_ API provides a safe abstraction. The `Sync` trait implementation allows the _Mutex_ to be statically allocated and shared across execution contexts, thus suitable for concurrent access from multiple threads or interrupt handlers.
+
+The proposed design is fundamentally different from the standard library and the `critical_section` _Mutex_ implementations, which both acts as guard types without clearly identified delimiting structure. Instead our approach is closure based, which allows us fine grained control over the boundaries of critical sections and preemption regions. While, similar to `critical_section` crate's `Mutex`, our design adopts the `CriticalSection` token as proof of mutual exclusion - however, our design strengthens the semantics in such a way that tokens cannot be copied or cloned. Thanks to the uniqueness property we can leverage the Rust borrow checker to at compile time enforce adherence to Rust's aliasing rules.
+
 
 
 #figure(
@@ -362,14 +425,22 @@ In this work we propose an extension to the `critical section` abstraction, to p
    8000490: f38c 8810    	msr	primask, r12
    8000494: e7fe         	b	0x8000494 <cm_preempt::__cortex_m_rt_main::h7b4e7a516b59e2fb+0x58> @ imm = #-0x4
   ```,
-  caption: [Disassembly of @fig:rust-preemption-example, showcasing the Rust zero-cost abstractions. The first `nop`, relates the case where we are accessing the _Mutex_ as mutable reference. The compiler backend is hoisting the memory address calculation (register `r1`) outside of the critical section boundary (`msr	primask, r2 (r2 = 1)`). The second `nop` relates to the preemption region, where the critical section has been released (`msr	primask, lr (lr = 0)`), and later restored (`msr	primask, r2 (r2 = 1)`). Inside of this region, the `CS` token is inaccessible, any attempted access would lead to a compile-time error. The first `bkpt` instruction reached when we have returned into the critical section. At this point we can now access the `CS` token again, and thus the protected data. The third `nop` is reached after we have entered the critical section in a nested manner (e.g., calling into code with internal critical section). The fourth `nop` is reached inside of inner preemption region (once again without access to the `CS` token). Finally the second `bkpt` is reached when returning to the inner critical section and the third when returning to the outer critical section. As seen, the compiler backend cleverly re-use the registers, matching/surpassing carefully hand-written assembly code.],
+  caption: [ARM v7em, disassembly of @fig:rust-preemption-example, showcasing the Rust zero-cost abstractions.],
 ) <fig:rust-objdump>
 
-== Native Support in the `critical-section` Crate
+- The first `nop`, relates the case where we are accessing the _Mutex_ as mutable reference inside of a critical section. The compiler backend is hoisting the memory address calculation (register `r1`) outside of the critical section boundary (`msr	primask, r2 (r2 = 1)`).
 
-For the POC implementation we make the assumption that `RestoreState::invalid()` represents a state where preemption is enabled. Moreover, we rely on a fork of `critical-section`, where the `CriticalSection` type have been strengthened to enforce move semantics, crucial for preventing the `CS` token from being leaked into the preemptive region.
+- The second `nop` relates to the preemption region, where the critical section has been released (`msr	primask, lr (lr = 0)`), and later restored (`msr	primask, r2 (r2 = 1)`). Inside of this region, the `CS` token is inaccessible, any attempted access would lead to a compile-time error.
 
-In future work, we plan to further investigate the `RestoreState` design and backing `Impl` trait definition to facilitate native support of preemptive regions in the upstreams `critical-section` crate.
+- The first `bkpt` instruction reached when we have returned into the critical section. At this point we can now access the `CS` token again, and thus the protected data. The third `nop` is reached after we have entered the critical section in a nested manner (e.g., calling into code with internal critical section).
+
+- The fourth `nop` is reached inside of inner preemption region (once again without access to the `CS` token).
+
+- Finally the second `bkpt` is reached when returning to the inner critical section and the third when returning to the outer critical section.
+
+== Performance Evaluation
+
+As seen in the above example, the compiler backend is able to cleverly re-use registers, matching/surpassing carefully hand-optimized assembly code. In particular, the critical section entry takes exactly 2 instructions, while critical section exit, preemptive region entry and exit take exactly 1 instruction each (this under the assumption that register pressure does not force stack spilling). In effect, our critical section implementation is truly zero-cost. In Rust terminology, implying that the abstracted API does not introduce any additional overhead compared to a carefully optimized manual implementation.
 
 = In-place Priority Queue Approach
 
