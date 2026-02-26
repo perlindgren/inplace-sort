@@ -184,35 +184,33 @@ In this work we propose an extension to the `critical section` abstraction, to p
 #figure(
   placement: none,
   ```rust
-    mod preemptive_region {
-      use critical_section::{CriticalSection, RestoreState};
-      /// Executes a closure with preemption enabled inside a critical section.
+  pub mod preemptive_region {
+      use super::*;
+      /// Executes a closure with preemption enabled, inside a critical section.
       ///
       /// # Safety
       ///
       /// By requiring the CriticalSection (CS) token, we ensure that `with` can only
       /// be called from within a critical section.
       ///
-      /// The CS token will be moved into the `with` function, but not leaked to into
-      /// the closure `f`.
-      ///
-      /// The CS token will be returned to the caller after the closure `f` allowing
-      /// reuse in consecutive calls to `with` within the same critical section.
+      /// The CS token will mutably borrowed by the with function, thus
+      /// inaccessible within the closure `f`.
       ///
       /// Given the assumption that RestoreState::invalid() represents a states
       /// where preemption is enabled, the closure `f` will thus execute:
       ///
-      /// - Within a critical section.
-      /// - With preemption enabled.
-      /// - Without access to the CS token.
+      /// - Within a critical section
+      /// - With preemption enabled
+      /// - Without access to the CriticalSection token.
       ///
-      pub fn with<R>(cs: CriticalSection, f: impl FnOnce() -> R) -> (R, CriticalSection) {
+
+      pub fn with<R>(cs: &mut CriticalSection, f: impl FnOnce() -> R) -> R {
           unsafe { critical_section::release(RestoreState::invalid()) };
 
           let result = f();
 
           unsafe { critical_section::acquire() };
-          (result, cs)
+          result
       }
 
       /// Create a well-defined preemption point within a critical section.
@@ -221,8 +219,8 @@ In this work we propose an extension to the `critical section` abstraction, to p
       ///
       /// See `with` for safety properties.
       ///
-      pub fn point(cs: CriticalSection) -> CriticalSection {
-          Self::with(cs, || {}).1
+      pub fn point(cs: &mut CriticalSection) {
+          with(cs, || {})
       }
   }
   ```,
@@ -232,42 +230,73 @@ In this work we propose an extension to the `critical section` abstraction, to p
 #figure(
   placement: none,
   ```rust
-  mod private {
-      use super::*;
-      pub struct MyProtectedData {
-          value: i32,
+  pub struct Mutex<T> {
+      data: core::cell::UnsafeCell<T>,
+  }
+  // This is not actually safe, but serves only as an illustration
+  impl<T> Mutex<T> {
+      pub const fn new(data: T) -> Self {
+          Self {
+              data: core::cell::UnsafeCell::new(data),
+          }
       }
-
-      impl MyProtectedData {
-          pub fn new(value: i32) -> Self {
-              Self { value }
-          }
-
-          pub fn access(&self, cs: &CriticalSection) -> i32 {
-              // Access the protected data within the critical section
-              self.value
-          }
+      pub fn read<R>(&self, _cs: &CriticalSection, f: impl FnOnce(&T) -> R) -> R {
+          // Immutable access the protected data within the critical section
+          let data = unsafe { &*self.data.get() };
+          f(data)
+      }
+      pub fn write<R>(&self, _cs: &mut CriticalSection, f: impl FnOnce(&mut T) -> R) -> R {
+          // Mutable access to the protected data within the critical section
+          let data = unsafe { &mut *self.data.get() };
+          f(data)
       }
   }
+  ```,
+  caption: [Mutex implementation.],
+) <fig:rust-mutex>
 
-  use private::MyProtectedData;
-  fn main() {
-      let protected_data = MyProtectedData::new(42);
+#figure(
+  placement: none,
+  ```rust
+  #![no_std]
+  #![no_main]
 
-      critical_section::with(|cs| {
-          protected_data.access(&cs);
+  use cortex_m as _;
+  use cortex_m_rt::entry;
+  use panic_halt as _;
 
-          let (_, cs) = preemptive_region::with(cs, || {
+  use preemption::{Mutex, preemptive_region};
+  static MY_VALUE: Mutex<i32> = Mutex::new(0);
+
+  #[entry]
+  fn main() -> ! {
+      critical_section::with(|mut cs| {
+          MY_VALUE.read(&cs, |data| *data);
+          MY_VALUE.write(&mut cs, |data| *data);
+
+          // Would error: cannot borrow `cs` as mutable more than once at a time
+          // MY_VALUE.write(&mut cs, |data| {
+          //     MY_VALUE.write(&mut cs, |data| *data);
+          //     *data += 1;
+          // });
+
+          preemptive_region::with(&mut cs, || {
               // The CS token is unaccessible inside the closure
-              // protected_data.access(&cs); <-- compile error, attempt to borrow moved value
+              // MY_VALUE.read(&cs, |data| *data); // Would error: borrow of moved value: `cs`
           });
 
-          let cs = preemptive_region::with(cs, || {
-              // protected_data.access(&cs); <-- compile error, attempt te borrow moved value
+          critical_section::with(|mut cs| {
+              MY_VALUE.read(&cs, |data| *data); // Would error: borrow of moved value: `cs`
+              preemptive_region::with(&mut cs, || {
+                  // The CS token is unaccessible inside the closure
+                  // MY_VALUE.read(&cs, |data| *data); // Would error: borrow of moved value: `cs`
+              });
           });
 
-          //cs <-- compile error, value will not live long enough, thus cannot be be leaked
+          // cs // Would error: lifetime may not live long enough, thus cannot be be leaked
       });
+
+      loop {}
   }
   ```,
   caption: [Example usage of the `preemptive_region` API. The example demonstrates how to access protected data within a critical section, and how to execute code with preemption enabled while ensuring that the `CriticalSection` token is not accessible within the preemptive region. Attempting to access the `CS` token within the preemptive region results in a compile-time error, thus enforcing the safety properties of the API.],
