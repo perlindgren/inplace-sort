@@ -1,15 +1,26 @@
 {
     "cSpell.ignoreWords": [
+        "Lockfree",
+        "Nonblocking",
         "Uninit",
         "abbrs",
         "bananote",
         "bkpt",
+        "brodal",
         "dtmp",
+        "emptyset",
+        "forall",
         "forgeable",
+        "luma",
+        "microcontrollers",
         "movs",
         "movt",
         "movw",
+        "objdump",
+        "pagebreak",
         "primask",
+        "schedulability",
+        "sundell",
         "usize"
     ]
 }

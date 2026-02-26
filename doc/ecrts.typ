@@ -99,14 +99,13 @@ In embedded and real-time systems, @DP scheduler kernel implementations typicall
 
 One of the main challenges of such algorithms is limiting the blocking time. Indeed, synchronizing concurrent accesses to shared data structures often rely on mutual exclusion locks (_mutex_). On single-core systems, these locks are typically implemented as critical sections where the lock-region executes with interrupts disabled. However, schedulability criteria and task execution jitter are generally dependent on the length of the _longest_ critical section in a given system; it is therefore of interest to limit worst-case lock duration to a strict minimum.
 
-Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure  presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert` and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed infallible; resource-limited embedded systems rarely implement truly infallible @CAS operations, such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm. Other implementations use skip-lists and randomized access to amortize asymptotic time complexity
-@sundellFastLockfreeConcurrent2003. Some work has also gone into limiting a @PQ's I/O operations between an internal cache and external memory, while retaining a favorable amortized time complexity for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a PQ, in @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with node manipulations also based on @CAS operations. We however deem these approaches unsuitable for hard real-time kernel implementations targeting single-core @COTS hardware, as the worst case blocking time is unbounded when accounting for retried operations.
+Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound data structure  presented in @liuLockFreeArrayBasedPriority2011 achieves lock-free $cal(O)(log(log(N)))$ `insert` and $cal(O)(log(N))$ `extractMin` operations. This @PQ uses atomic @CAS operations which are assumed infallible; resource-limited embedded systems rarely implement truly infallible @CAS operations, such as is the case for the ubiquitous ARM Cortex-M family of @COTS microcontrollers @arm-v7m-arm. Other implementations use skip-lists and randomized access to amortize asymptotic time complexity @sundellFastLockfreeConcurrent2003. Some work has also gone into limiting a @PQ's I/O operations between an internal cache and external memory, while retaining a favorable amortized time complexity for its operations @brodalExternalMemoryPriorityQueues2025. Finally, while not a PQ, in @harrisPragmaticImplementationNonblocking2001, the authors propose a concurrent linked list, with node manipulations also based on @CAS operations. We however deem these approaches unsuitable for hard real-time kernel implementations targeting single-core @COTS hardware, as the worst case blocking time is unbounded when accounting for retried operations.
 
 In this paper we propose a concurrent priority queue implementation leveraging Rust's strong typing and memory safety guarantees. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
 Key contributions of this work include:
 - An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin` operations.
-- An extension to the embedded Rust foundational `critical-section` crate, introducing structured preemption points and preemption regions within a critical section. For our proposal, we present safety argumentation and show compliance to the `critical-section` crate's safety guarantees.
+- An extension to the embedded Rust foundational `critical-section` crate, introducing structured preemption points and preemption regions within a critical section. For our proposal, we present safety argumentation and show compliance to rust ownership and borrowing rules.
 - A set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety and soundness of the implementation.
 - Leveraging the proposed preemption point abstraction we show that worst case blocking time has a constant upper bound of $cal(O)(1)$, thus suitable for hard real-time scheduling applications.
 - By introducing a work-stealing mechanism, the amortized complexity can maintain the $cal(O)(N)$ `extractMin` also for the current case.
@@ -187,7 +186,7 @@ Leveraging on Rust *zero-cost* abstractions, the `critical_section` crate define
   caption: [Minimal example.],
 ) <fig:rust-critical-section>
 
-== Preemption Regions
+== Preemption Points and Regions
 
 In this work we propose an extension to the `critical section` abstraction, to provide preemption regions within a critical section while maintaining the advantages of structured nesting.
 
@@ -328,8 +327,6 @@ Based on the new `Impl` trait definition, we formulate the preemption region fun
 
 The proposed design is fundamentally different from the standard library and the `critical_section` _Mutex_ implementations, which both acts as guard types without clearly identified delimiting structure. Instead our approach is closure based, which allows us fine grained control over the boundaries of critical sections and preemption regions. While, similar to `critical_section` crate's `Mutex`, our design adopts the `CriticalSection` token as proof of mutual exclusion - however, our design strengthens the semantics in such a way that tokens cannot be copied or cloned. Thanks to the uniqueness property we can leverage the Rust borrow checker to at compile time enforce adherence to Rust's aliasing rules.
 
-
-
 #figure(
   placement: none,
   ```rust
@@ -385,8 +382,12 @@ The proposed design is fundamentally different from the standard library and the
       loop {}
   }
   ```,
-  caption: [Example usage of the `preemptive_region` API. The example demonstrates how to access protected data within a critical section, and how to execute code with preemption enabled while ensuring that the `CriticalSection` token is not accessible within the preemptive region. Attempting to access the `CS` token within the preemptive region results in a compile-time error, thus enforcing the safety properties of the API. In @fig:rust-objdump, we show the corresponding assembly code generated by the Rust compiler for this example, where the preemption point is implemented by releasing the critical section (enabling interrupts), and re-acquiring it after the closure `f` has been executed. To facilitate readability, each section is delimeted by a `bkpt` instruction, which serves as a breakpoint for debugging purposes. Similarly, `nop` instructions are injected to show the entrance point of inner sections.],
+  caption: [Example usage of the `preemptive_region` API.],
 ) <fig:rust-preemption-example>
+
+The example demonstrates how to access protected data within a critical section, and how to execute code with preemption enabled while ensuring that the `CriticalSection` token is not accessible within the preemptive region. Attempting to access the `CS` token within the preemptive region results in a compile-time error, thus enforcing the safety properties of the API. Moreover, it shows that Rust ownership and aliasing rules are successfully enforced, the compiler will reject all `Would error:` cases.
+
+In @fig:rust-objdump, we show the corresponding assembly code generated by the Rust compiler for this example. To facilitate readability, each section is delimited by a `bkpt` instruction, which serves as a breakpoint for debugging purposes. Similarly, `nop` instructions are injected to show the entrance point of inner sections.
 
 #figure(
   placement: none,
@@ -630,38 +631,34 @@ Moreover, the for each element traversed we cross a preemption point, ensuring t
   caption: [Priority Queue `extractMin` operation.],
 ) <fig:pq_extractMin>
 
+#pagebreak()
 
-
-
-
-
-
-// #set enum(numbering: "a)")
-// + in figure shows the initial state after `new`, where the queue is empty.
-// + shows the state after `insert(42)`.
-// + shows the state after `insert(1337)`.
-// + shows the state after `insert(38)`.
-// + shows the state after `extractMin()`.
-// + shows the state after `extractMin()`.
-// + shows the state after `extractMin()`. At this point the queue is empty again. At this point `min()` returns `None`, and `extractMin()` returns with an error.
-
-
-
+== Example Execution
 
 #figure(
-  placement: auto,
+  placement: none,
   image("../build/figs/operations_single_col.pdf", width: 100%),
-  caption: [Example execution of the API operations. The figure illustrates the state of the queue after a sequence of `insert` and `extractMin` operations. The queue is initially empty, and we insert three values (42, 1337, 38). We then perform three `extractMin` operations, which return the values in sorted order (38, 42, 1337), leaving the queue empty again.],
+  caption: [Example execution of the API operations.],
 )
 <fig:operations_single_col>
 
-// #figure(
-//   placement: auto,
-//   image("../build/figs/operations_two_col.pdf", width: 100%),
-//   caption: [Extraction of the minimum element from the priority queue, with 3 concurrent readers and
-//     a writer protected by a (global)critical section.],
-// )
-// <fig:operations_two_col>
+@fig:operations_single_col illustrates the state of the queue after a sequence of `insert` and `extractMin` operations. The queue is initially empty, and we insert three values (42, 1337, 38). We then perform three `extractMin` operations, which return the values in sorted order (38, 42, 1337), leaving the queue empty again.
+#set enum(numbering: "a)")
+
++ in figure shows the initial state after `new`, where the queue is empty. All nodes are in the free list, and the head and tail pointers are `None`.
+
++ shows the state after `insert(42)`. This implies an allocation of node $A$ from the free list $F$, initialization of the allocated node $A$ with the value 42, and insertion at the tail $T$ of the list. The head $H$ and tail $T$ pointers are updated to point to the new node $A$.
+
++ shows the state after `insert(1337)`. This implies an allocation of node $A$ from the free list $F$, initialization of the allocated node $A$ with the value 1337, and insertion at the tail $T$ of the list. The tail pointer is updated to point to the new node $A$. The head pointer remains unchanged, as it still points to the first node containing 42.
+
++ shows the state after `insert(38)`. Implications follow previous example. The head pointer remains unchanged, as it still points to the first node containing 42. Any further `insert` operations would fail with a `QueueFull` error, as the free list $F$ is now empty.
+
++ shows the state after `extractMin()`. This implies that the node $A$ with the minimal value (38) is removed from the list headed by $H$ returned to the free list $F$. Node removal implies linking `cursor.min_index` (pointing to $A$), to the successor of $A$. In case $T$ and $A$ coincides ($A$ being the tail node), $T$ is set to `cursor.min_index` (predecessor of $A$). Finding the minimum element requires traversing the entire list, thus we cross a preemption point for each node traversed. Under preemption, the `extractMin` operation completes at the highest preemption level among the dispatch handlers, thus ensuring dispatch latency and jitter to be free of any priority inversion inferred by shared priority queue accesses.
+
++ shows the state after `extractMin()`. Follows the same implications as the previous `extractMin` operation, where the node $A$ with the minimal value (42) is removed from the list headed by $H$ and returned to the free list $F$.
+
++ shows the state after `extractMin()`. Follows the two previous examples. The node $A$ with the minimal value (1337) is removed from the list headed by $H$ and returned to the free list $F$. Here, both $H$ and $T$ refer to $A$. While $A$ is the last and only node, both $H$ and $T$ are updated to the predecessor of $A$ (`None`). At this point the queue is (again) empty, with all nodes returned to the free list $F$.
+
 
 == Dispatcher Design
 
@@ -669,14 +666,17 @@ By performing the _extractMin_ operation at the level of the currently highest p
 
 = Conclusions
 
-In this short paper we have sketched a concurrent priority queue implementation, and argued constant time blocking times for all operations. The in-place designs allows for efficient memory usage and static allocation, meeting our requirements for hard real-time scheduling applications. While priority queues using unsorted in-place array-based linked lists are well understood, the novelty here resides with the simplistic concurrent design, matching concrete requirements for hard-real time scheduling on single-core @COTS hardware. In the context of embedded hard real-time systems, the anticipated number of tasks is relatively small (often ranging from a hand-full to a few dozens), overhead of $cal(O)(N)$ for _extractMin_ is expected to be acceptable, while the constant time blocking times for all operations are expected to yield favorable scheduling performance.
+In this paper we have outlined a concurrent priority queue implementation, and argued constant $cal(O)(1)$ blocking times for all operations. The in-place designs allows for efficient memory usage and static allocation, meeting our requirements for hard real-time scheduling applications. While priority queues using unsorted in-place array-based linked lists are well understood, the novelty here resides with the simplistic concurrent design, matching concrete requirements for hard-real time scheduling on single-core @COTS hardware. In the context of embedded hard real-time systems, the anticipated number of tasks is relatively small (often ranging from a hand-full to a few dozens), overhead of $cal(O)(N)$ for _extractMin_ is expected to be acceptable, while the constant time blocking times for all operations are expected to yield favorable scheduling performance.
+
+For the implementation, we have revisited the Rust `critical section` abstraction, and proposed an extension to provide preemption regions within critical sections. The proposed design provides a safe APIs for the inherently unsafe operations (shared mutable state), at in Rust terms zero-cost. With the priority queue as an example, we have shown the $cal(O)(N)$ _extractMin_ operation can be be split into $N$ $cal(O)(1)$ operations, split at a well defined preemption point within the overarching critical section.
+
+The `critical-section` crate, approaching 40 million downloads at the time of writing (Feb. 2026), is _foundational_ within the Rust embedded ecosystem. In its current form, the API provides a powerful abstraction for critical sections, but lacks the expressiveness to allow for preemption regions within critical sections. The proposed extension addresses this gap, providing a more flexible API that can be used to implement a wider range of concurrent data structures and algorithms, while still maintaining the safety guarantees of Rust.
 
 == Future work
 
-In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy @128747
-based @EDF scheduler. For the implementation, we intend to leverage on the Rust language for
-zero-cost abstractions, provide safe APIs for inherently unsafe operations, and characterize the blocking factors and overhead. Furthermore, we aim to explore hardware-assisted interrupt time-stamping and study the practical effects of obtained jitter minimization to scheduling performance.
+In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy @128747 based @EDF scheduler. For the implementation, we intend to characterize the blocking factors and overhead, and establish overhead aware response time and scheduling test. Furthermore, we aim to explore hardware-assisted interrupt time-stamping and study the practical effects of obtained jitter minimization to scheduling performance.
 
+Regarding the `critical-section` crate extension, we plan to propose the design to the Rust embedded working group, and jointly work towards its inclusion in the foundational crate.
 
 #bibliography("refs.bib")
 
