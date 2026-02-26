@@ -493,6 +493,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
 
   let fig = figure(
     table(
+      stroke: none,
       columns: 3,
       gutter: 25pt,
       [
@@ -542,6 +543,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
     table(
       columns: 2,
       gutter: 10pt,
+      stroke: none,
       table.cell(colspan: 2)[
         Case 1: $"Cur" = emptyset$
       ],
@@ -588,6 +590,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
     table(
       columns: 2,
       gutter: 10pt,
+      stroke: none,
       table.header(),
       table.cell(colspan: 2)[
         Assume $C = T$
@@ -670,21 +673,23 @@ The data structure is initialized as follows: $H, T, italic("Cur") = emptyset$, 
 
 The invariants describing the data structure are:
 
-#math.equation(
+#math.equation(supplement: [Invariant],
   block: true,
   $N = {H ->^*} union {F ->^*} "and" {H ->^*} inter {F ->^*} = emptyset$,
 )<eq:nodes>
 
-#math.equation(block: true, $forall n in \{H ->^*\}: n in "dom"(italic("data"))$)<eq:initialized>
+#math.equation(supplement: [Invariant], block: true, $forall n in \{H ->^*\}: n in "dom"(italic("data"))$)<eq:initialized>
 
-#math.equation(block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$)<eq:no-loops>
+#math.equation(supplement: [Invariant],
+  block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$
+)<eq:no-loops>
 
-#math.equation(
+#math.equation(supplement: [Invariant],
   block: true,
   $T "is not empty" => T in {H ->^*} "and" italic("next")(T) "is empty"$,
 )<eq:tail_in_head>
 
-#math.equation(
+#math.equation(supplement: [Invariant],
   block: true,
   $italic("Cur") "is not empty" => cases(
     C in {H -> *},
