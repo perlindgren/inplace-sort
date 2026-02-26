@@ -482,109 +482,13 @@ Once the traversal is complete, the minimum element, if any, is removed from the
 
 The restart-free implementation ensures that the amortized work for _extractMin_ of each enqueued element is $cal(O)(N)$. In @sec:extractMin we will further elaborate on implementation specifics of the stealing mechanism, and argue that the amortized complexity remains $cal(O)(N)$ even in presence of preemptive execution among dispatch handlers.
 
-== Safety Invariants<sec:safety_invariants>
+== Formalization of the algorithm
 
-Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness.
+In the following, we present a formalization of the data structure and the algorithm, and later, show that the presented implementation matches the formalization. Using the formalization, we define properties of the data structure and argue they are invariant under the described operations. The invariant properties guarantee the algorithm's correctness under the preemptive executiong environment, and ensure no undefined behavior occurs even in the `unsafe` section of the Rust-based implementation.
 
-In the following we will outline key safety invariants to ensure `unsafe` sections of the code are safe, and that the list works correcly even with preemption. The invariants apply to each point in time outside of a critical section, e.g. before and after each atomic operation on the list---at a preemption point.
+Let $N$ be a finite set of nodes, and $H, F, T in N union {emptyset}$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Emptyset $emptyset$ here represents a pointer not pointing to anything. Let $V$ be a set of values representing the possible values associated to the nodes. An implentation agnostic functions descibes the linked structure of nodes: $italic("next"): N -> N union {emptyset}$ is a function defining the next node for each node. Another implementation agnostic function desribes the values associated to some nodes: $italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes. Not all nodes have an associated value (they might be uninitilized), meaning the domain of $italic("data")$ is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
 
-Let $N$ be the set of (statically) allocated nodes, and $H, F, T in N$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Two implentation agnostic functions descibe the linked structure of nodes that can have assigned values or be uninitialized. Let $italic("next"): N -> N union {emptyset}$ be a function defining the next node for each node. Where $V$ is any set of values, let $italic("data"): N harpoon.rt V$ be a function defining the value of the initialized nodes. Finally, let $italic("Cur")$ be the cursor used by _extractMin_, and if it's not empty, let $C$, and $italic(min)$,  $italic("prev")$ be the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively.
-
-For $X in N$, denote ${X ->^* } =$#box[${n in N mid(|) exists space k in NN_0 : italic("next")^k (X) = n }$] and ${X ->^+ } = $#box[${n in N mid(|) exists space k in NN_+ : italic("next")^k (X) = n }$]. If $X$ is empty, both notations equal the empty set $emptyset$.
-
-The invariants describing the data structure are:
-
-#math.equation(
-  block: true,
-  $N = {H ->^*} union {F ->^*} "and" {H ->^*} inter {F ->^*} = emptyset$,
-)<eq:nodes>
-
-#math.equation(block: true, $forall n in \{H ->^*\}: n in "dom"(italic("data"))$)<eq:initialized>
-
-#math.equation(block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$)<eq:no-loops>
-
-#math.equation(
-  block: true,
-  $T "is not empty" => T in {H ->^*} "and" italic("next")(T) "is empty"$,
-)<eq:tail_in_head>
-
-#math.equation(
-  block: true,
-  $italic("Cur") "is not empty" => cases(
-    C in {H -> *},
-    italic(min) = min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
-    italic("prev") "is empty and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
-  )
-  $
-)<eq:cursor>
-
-@eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer and the set of nodes reachable from the free pointer. As a corollary, we can infer that nodes reachable from $H$ head and $F$ free are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust. Allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
-
-@eq:initialized states that the set of nodes reachable from the head pointer are all initialized with a valid value according to the defined type. Rust requires that all values are initialized before they can be safely read. By upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
-
-@eq:no-loops states that there are no loops in the lists starting at $T$ and $F$. This is essential to guarantee $cal(O)(n)$ for the _extractMin_ operation.
-
-Assuming @eq:no-loops, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it points to the *last* node in the list reachable from the head pointer $H$. This invariant is crucial for ensuring that we can safely assume that appended nodes are inserted at the tail of the list reachable from $H$.
-
-Finally, @eq:cursor stipulates that the cursor is either empty, or it the assiated data has three qualities:
-- the reader pointer points at some node reachable from the head pointer,
-- the minimum value encountered is indeed the minimum value among nodes preceeding and including the last inspected node, and
-- the _previous pointer_ points at the node before the node containing the minimum value encountered, or is empty if the minimum value is found at the head of the list.
-
-For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants  @eq:nodes, @eq:initialized, @eq:no-loops, @eq:tail_in_head and @eq:cursor. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
-
-== Data Structure and API
-
-=== Data Structure
-
-#figure(
-  placement: none,
-  ```rust
-  pub struct Cursor<T> {
-      min_index: Option<u16>, // None, value indicates that index refers to head
-      min_value: T,
-      current_index: u16,
-  }
-
-  pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
-    data: [MaybeUninit<T>; N],
-    next: [Option<u16>; N],
-    head: Option<u16>,
-    tail: Option<u16>,
-    free: Option<u16>,
-    cursor: Option<Cursor<T>>,
-  }
-  ```,
-  caption: [Priority Queue struct definition. The queue is backed by a constant sized array that can be either statically, heap or stack allocated in compliance to the Rust ownership model.],
-) <fig:pq_struct>
-
-The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of the queue is determined as a compile-time constant `N`. The `data` field is an array of `MaybeUninit<T>`, which allows us to manage uninitialized memory safely. The `next` field is an array of `Option<u16>`, which represents the linked list structure of the queue. The `head`, `tail`, and `free` fields hold indices to the head and the tail of the queue, and the head of the free list, respectively. The `Option<u16>` enum type allows us to leverage the Rust type system to represent the absence of a next node (`None` variant), thus avoiding the need for sentinel values and their associated risks of @UB.
-#footnote[This is just one possible implementation, alternatively we could pack the `data` and `next` fields into a single array of nodes, where each element is a struct containing both the value and the next pointer. However, we opted for the current design for its simplicity and clarity in illustrating the key concepts.]
-
-Reflecting the implementation to the formalization in @sec:safety_invariants ---the set nodes $N$ in the formalization correspond to indices $#text(`0`), ...,#text(`N-1`)$; $H$, $T$ and $F$ correspond to `head`, `tail` and `free`, respectively; $italic("next")(i), i in #text(`N`)$ corresponds to `next[i]`; $italic("data")(i), i in #text(`N`)$ corresponds to `data[i]`, and "empty" or $emptyset$ corresponds to `None`. Indices $#text(`i`) in #text(`N`)$ for which `data[i]` is uninitialized, do not belong in $"dom"(italic("data"))$.
-
-=== API: `const fn new() -> Self`<sec:new>
-
-Written entirely in safe Rust (implementation left out for brevity), the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
-#footnote[While only a subset of the Rust language is currently supported in _const context_, it proved sufficient for our implementation.]
-
-The safety invariants in @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
-
-Blocking time is not a concern for the `new` function. In case of static allocation, the initialization is performed before `main` is executed, while in case of heap or stack allocation, the queue is not accessible until the `new` function returns, thus there is no concurrent access to the queue during initialization.
-
-Formally, the queue is initialized as $H = emptyset, T = emptyset, F = n in N$, $italic("Cur") = emptyset$, $"dom"(italic("data")) = emptyset$ and $italic("next")$ is initialized in whatever way that satisfies @eq:nodes and @eq:no-loops.
-
-=== API: `insert(&mut self, value: T) -> Result<(), ()>`<sec:insert>
-
-The `insert` operation (@fig:pq_insert) is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
-
-The `insert` operation allocates (removes) a node $A$ from the free list ($F$), initializes it and inserts it at the tail ($T$) of the allocated list ($H$), honoring @eq:nodes and @eq:no-loops.
-_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds. 
-
-Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
-
-Formally, the _insert value $v in V$_ is a manipulation of $(H, T, F, italic("next"), italic("data"), italic("Cur"))$, $F != emptyset$, where the next state, denoted by $(H', T', F', italic("next"'), italic("data"'), italic("Cur"'))$ is defined as described in @table:insert.
-
+Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$ be the cursor used by _extractMin_. If the cursor is not empty, the $C$, and $italic(min)$,  $italic("prev")$ are the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively.
 
 #{
   show table.cell: set text(size: 9pt)
@@ -625,98 +529,11 @@ Formally, the _insert value $v in V$_ is a manipulation of $(H, T, F, italic("ne
       $]]
     ]
     ),
-    caption: "The insert v operation"
+    caption: [Formalization of the _insert_ $v$ operation/transformation.]
   )
   [#fig <table:insert>]
 }
 
-
-
-
-
-
-#figure(
-  placement: none,
-  ```rust
-   fn insert(&mut self, value: i32) -> Result<(), Error> {
-       critical_section::with(|_cs| {
-           let new_index = self.free.ok_or(Error::QueueFull)?;
-
-           self.data[new_index as usize] = MaybeUninit::new(value);
-           self.free = self.next[new_index as usize];
-           self.next[new_index as usize] = None; // new node points to None
-           if let Some(tail_index) = self.tail {
-               self.next[tail_index as usize] = Some(new_index); // old tail points to new node
-           } else {
-               self.head = Some(new_index);
-           }
-           self.tail = Some(new_index); // if the queue was empty, set tail to new node
-
-           Ok(())
-       })
-   }
-  ```,
-  caption: [Priority Queue `insert` operation.],
-) <fig:pq_insert>
-
-=== API: `extractMin(&mut self) -> Option<T>`<sec:extractMin>
-
-@fig:pq_extractMin illustrates in abbreviation the `extractMin` operation, which is responsible for removing and returning the minimum element from the priority queue. The operation traverses the linked list starting from the head, comparing each element to find the minimum value. Once the minimum element is found, it is removed from the list, and the linked list pointers are updated accordingly. The minimum value is then returned.
-
-On function entry, we either steal an active cursor (and resume the traversal)or create a new cursor starting at the head of the list (code excluded for brevity).
-
-During traversal, according to @eq:initialized reachable nodes headed by $H$ are initialized, thus `unsafe { self.data[next_index as usize].assume_init() }` is a safe operation. After the cursor has been updated, we introduce a synchronized preemption point.
-
-On resume, if the cursor was stolen (indicated by a `None` value), we break the loop, else we continue the traversal.
-
-Once the traversal is complete, if the cursor was stolen we return directly with a `None` value (as the element to dequeue has already been removed and handled at the preemption point. Else, we proceed to remove the minimum element and empty the cursor.
-
-A new cursor will uphold @eq:cursor. A stolen cursor that upholds @eq:cursor will uphold it after each step of the travelsal. After the preemption point, a new node might be added at the tail, but it does not affect @eq:cursor. When the minimum node is removed, the cursor is emptied, maintaining the invariant.
-
-Regarding complexity, the algorithm is trivially $cal(O)(N)$, as we need to traverse the entire list to find the minimum element. In case of preemption by another dispatch handler, the stealing mechanism allows the higher priority handler to continue the traversal on behalf of the preempted handler. The highest priority dispatch handler will execute to completion, set the stolen cursor to `None`, dequeue and return the minimum element. Thus, we can conclude that each element is inspected exactly once, which leads us to conclude that the (amortized) complexity remains $cal(O)(N)$, even in presence of preemptive execution among dispatch handlers. As an effect, the `extractMin` will always complete at the highest preemption level among the dispatch handlers, thus ensuring dispatch latency and jitter to be free of any priority inversion inferred by shared priority queue accesses.
-
-Moreover, the for each element traversed we cross a preemption point, ensuring that the blocking is bounded and constant time $cal(O)(1)$.
-
-#figure(
-  placement: none,
-  ```rust
-  pub fn extractMin(&mut self, mock_test: MockTest) -> Option<T> {
-      CsSingleCore::with(|mut cs| {
-          // steal or create new cursor
-          // search minimal element in loop
-          while let Some(next_index) = self.next[current_index as usize] {
-              let next_value = unsafe { self.data[next_index as usize].assume_init() };
-              if next_value < self.cursor.unwrap().min_value {
-                  self.cursor = Some(Cursor {
-                      min_value: next_value,
-                      min_index: Some(current_index),
-                      current_index: next_index,
-                  });
-              }
-              self.cursor.replace(Cursor {
-                  current_index: next_index,
-                  ..self.cursor.unwrap()
-              });
-
-              CsSingleCore::preemption_point(&_cs);
-
-              if let Some(cursor) = self.cursor {
-                  current_index = cursor.current_index;
-              } else {
-                  break;
-              }
-          }
-          // retire cursor (None value)
-          // dequeue and return minimal element if any
-      }
-  }
-  ```,
-  caption: [Priority Queue `extractMin` operation.],
-) <fig:pq_extractMin>
-
-Formally, _extractMin_ is divided into two atomic operations on $(H, T, F, italic("next"), italic("data"), italic("Cur"))$: one step travelsal of $italic("Cur")$ on the list, as in @table:cursor-operations and extracting the minimum valued node if the cursor pointer is at the tail, as in @table:extract-min.
-
-Each of the operations descibed in @table:insert, @table:cursor-operations and @table:extract-min assume the invariants in @sec:safety_invariants and leave the invariants unchanged. 
 
 #{
   show table.cell: set text(size: 9pt)
@@ -761,7 +578,7 @@ Each of the operations descibed in @table:insert, @table:cursor-operations and @
       $]
     ]
     ),
-    caption: "Cursor traversing the list"
+    caption: [Formalization of extracting the found min, or the _extractFoundMin_ transformation.]
   )
   [#fig <table:cursor-operations>]
 }
@@ -828,7 +645,206 @@ Each of the operations descibed in @table:insert, @table:cursor-operations and @
   [#fig <table:extract-min>]
 }
 
+The data structure is defined as a 6-tuple $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, and the operations _insert_ and _extractMin_ as transformations $(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$ of that 6-tuple. Formally, three different transformations are defined: _insert_ (@table:insert), _forwardCursor_ (@table:cursor-operations), and _extractFoundMin_ (@table:extract-min). The _extractMin_ operation consists of repeated application of _forwardCursor_ until $C=T$, followed by an instant application of _extractFoundMin_. Each step of _forwardCursor_ can be intercepted with an _insert_ operation.
 
+To define the initial state of the data structure, that is the 6-tuple $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, we first denote the following:
+
+For $X in N$, denote
+$
+{X ->^* } = {n in N mid(|) exists space k in NN_0 : italic("next")^k (X) = n },
+$
+i.e., ${X ->^* }$ is the set of nodes reachable from $X$ by applying $italic("next")$ zero or more times, and
+$
+{X ->^+ } = {n in N mid(|) exists space k in NN_+ : italic("next")^k (X) = n },
+$
+i.e., ${X ->^+ }$ is the set of nodes reachable from $X$ by applying $italic("next")$ one or more times. If $X$ is empty, both notations equal the empty set $emptyset$. Additionally, we define a predicate $"List"(X)$ that says node $X$ starts a linked list without any loops, i.e,
+$
+"List"(X) = forall n in {x ->^*}: not(n ->^+ n).
+$
+
+The data structure is initialized as follows: $H, T, italic("Cur") = emptyset$, $T in N$, and the $italic("next")$ function is initialized in any way to satisfy $"List"(F)$, ${F ->^*} = N$. The list-order of nodes does not matter, as long as the list starting from $F$ contains all the nodes. The function $italic("data")$ at the intitial state is arbitrary.
+
+=== Properties of the data structure<sec:safety_invariants>
+
+The invariants describing the data structure are:
+
+#math.equation(
+  block: true,
+  $N = {H ->^*} union {F ->^*} "and" {H ->^*} inter {F ->^*} = emptyset$,
+)<eq:nodes>
+
+#math.equation(block: true, $forall n in \{H ->^*\}: n in "dom"(italic("data"))$)<eq:initialized>
+
+#math.equation(block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$)<eq:no-loops>
+
+#math.equation(
+  block: true,
+  $T "is not empty" => T in {H ->^*} "and" italic("next")(T) "is empty"$,
+)<eq:tail_in_head>
+
+#math.equation(
+  block: true,
+  $italic("Cur") "is not empty" => cases(
+    C in {H -> *},
+    italic(min) = min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
+    italic("prev") "is empty and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
+  )
+  $
+)<eq:cursor>
+
+@eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer and the set of nodes reachable from the free pointer. As a corollary, we can infer that nodes reachable from $H$ head and $F$ free are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust. Allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
+
+@eq:initialized states that the set of nodes reachable from the head pointer are all initialized with a valid value according to the defined type. Rust requires that all values are initialized before they can be safely read. By upholding @eq:initialized, it is sufficient to show that values are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and avoid @UB.
+
+@eq:no-loops states that there are no loops in the lists starting at $T$ and $F$. This is essential to guarantee $cal(O)(n)$ for the _extractMin_ operation.
+
+Assuming @eq:no-loops, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it points to the *last* node in the list reachable from the head pointer $H$. This invariant is crucial for ensuring that we can safely assume that appended nodes are inserted at the tail of the list reachable from $H$.
+
+Finally, @eq:cursor stipulates that the cursor is either empty, or it the assiated data has three qualities:
+- the reader pointer points at some node reachable from the head pointer,
+- the minimum value encountered is indeed the minimum value among nodes preceeding and including the last inspected node, and
+- the _previous pointer_ points at the node before the node containing the minimum value encountered, or is empty if the minimum value is found at the head of the list.
+@eq:cursor is especially important to ensure the _extractMin_ operation can be safely preempted, and it will still find the minimum node when the cursor reaches the tail, i.e., when $C = T$.
+
+The invariants hold for the initial state of the data structure, and it can be shown that, assuming they hold for an initial $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, they also hold after each transformation $(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$---either _insert_, _forwardCursor_ or _extractFoundMin_ as defined in @table:insert, @table:cursor-operations and @table:extract-min.
+
+== Data Structure and API
+
+For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants  @eq:nodes, @eq:initialized, @eq:no-loops, @eq:tail_in_head and @eq:cursor. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
+
+=== Data Structure
+
+#figure(
+  placement: none,
+  ```rust
+  pub struct Cursor<T> {
+      min_index: Option<u16>, // None, value indicates that index refers to head
+      min_value: T,
+      current_index: u16,
+  }
+
+  pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
+    data: [MaybeUninit<T>; N],
+    next: [Option<u16>; N],
+    head: Option<u16>,
+    tail: Option<u16>,
+    free: Option<u16>,
+    cursor: Option<Cursor<T>>,
+  }
+  ```,
+  caption: [Priority Queue struct definition. The queue is backed by a constant sized array that can be either statically, heap or stack allocated in compliance to the Rust ownership model.],
+) <fig:pq_struct>
+
+The `PriorityQueue` struct is defined as shown in @fig:pq_struct. The size of the queue is determined as a compile-time constant `N`. The `data` field is an array of `MaybeUninit<T>`, which allows us to manage uninitialized memory safely. The `next` field is an array of `Option<u16>`, which represents the linked list structure of the queue. The `head`, `tail`, and `free` fields hold indices to the head and the tail of the queue, and the head of the free list, respectively. The `Option<u16>` enum type allows us to leverage the Rust type system to represent the absence of a next node (`None` variant), thus avoiding the need for sentinel values and their associated risks of @UB.
+#footnote[This is just one possible implementation, alternatively we could pack the `data` and `next` fields into a single array of nodes, where each element is a struct containing both the value and the next pointer. However, we opted for the current design for its simplicity and clarity in illustrating the key concepts.]
+
+Reflecting the implementation to the formalization in @sec:safety_invariants ---the set nodes $N$ in the formalization correspond to indices $#text(`0`), ...,#text(`N-1`)$; $H$, $T$ and $F$ correspond to `head`, `tail` and `free`, respectively; $italic("next")(i), i in #text(`N`)$ corresponds to `next[i]`; $italic("data")(i), i in #text(`N`)$ corresponds to `data[i]`, and "empty" or $emptyset$ corresponds to `None`. Indices $#text(`i`) in #text(`N`)$ for which `data[i]` is uninitialized, do not belong in $"dom"(italic("data"))$.
+
+=== API: `const fn new() -> Self`<sec:new>
+
+Written entirely in safe Rust (implementation left out for brevity), the code implements the queue initialization, and is guaranteed to produce a valid `PriorityQueue` instance with all data elements in an uninitialized state, as seen in @fig:operations_single_col a). The `const fn`, allows for compile-time initialization, thus enabling static allocation of the queue.
+#footnote[While only a subset of the Rust language is currently supported in _const context_, it proved sufficient for our implementation.]
+
+The safety invariants in @sec:safety_invariants are trivially upheld by the `new` function, as it initializes the `free` list to include all nodes, while the `head` and `tail` pointers are set to `None`, indicating an empty queue.
+
+Blocking time is not a concern for the `new` function. In case of static allocation, the initialization is performed before `main` is executed, while in case of heap or stack allocation, the queue is not accessible until the `new` function returns, thus there is no concurrent access to the queue during initialization.
+
+Reflecting the implementation to the formalization, setting `head`, `tail` and `cursor` to `None` corresponds to setting $H$, $T$ and $italic("Cur")$ to $emptyset$. The `free` pointer is set to $0$, and the `next` array is initialized to form a list including all the nodes, corresponding to how $italic("next")$ and $T$ are initialized in the formalization.
+
+=== API: `insert(&mut self, value: T) -> Result<(), ()>`<sec:insert>
+
+The `insert` operation (@fig:pq_insert) is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
+
+The `insert` operation allocates (removes) a node $A$ from the free list ($F$), initializes it and inserts it at the tail ($T$) of the allocated list ($H$), honoring @eq:nodes and @eq:no-loops.
+_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds. 
+
+Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
+
+Reflecting the implementation to the formalization, the `insert` method is an atomic operation corresponding to the _insert_ transformation as defined in @table:insert.
+
+
+#figure(
+  placement: none,
+  ```rust
+   fn insert(&mut self, value: i32) -> Result<(), Error> {
+       critical_section::with(|_cs| {
+           let new_index = self.free.ok_or(Error::QueueFull)?;
+
+           self.data[new_index as usize] = MaybeUninit::new(value);
+           self.free = self.next[new_index as usize];
+           self.next[new_index as usize] = None; // new node points to None
+           if let Some(tail_index) = self.tail {
+               self.next[tail_index as usize] = Some(new_index); // old tail points to new node
+           } else {
+               self.head = Some(new_index);
+           }
+           self.tail = Some(new_index); // if the queue was empty, set tail to new node
+
+           Ok(())
+       })
+   }
+  ```,
+  caption: [Priority Queue `insert` operation.],
+) <fig:pq_insert>
+}
+
+
+=== API: `extractMin(&mut self) -> Option<T>`<sec:extractMin>
+
+@fig:pq_extractMin illustrates in abbreviation the `extractMin` operation, which is responsible for removing and returning the minimum element from the priority queue. The operation traverses the linked list starting from the head, comparing each element to find the minimum value. Once the minimum element is found, it is removed from the list, and the linked list pointers are updated accordingly. The minimum value is then returned.
+
+On function entry, we either steal an active cursor (and resume the traversal)or create a new cursor starting at the head of the list (code excluded for brevity).
+
+During traversal, according to @eq:initialized reachable nodes headed by $H$ are initialized, thus `unsafe { self.data[next_index as usize].assume_init() }` is a safe operation. After the cursor has been updated, we introduce a synchronized preemption point.
+
+On resume, if the cursor was stolen (indicated by a `None` value), we break the loop, else we continue the traversal.
+
+Once the traversal is complete, if the cursor was stolen we return directly with a `None` value (as the element to dequeue has already been removed and handled at the preemption point. Else, we proceed to remove the minimum element and empty the cursor.
+
+A new cursor will uphold @eq:cursor. A stolen cursor that upholds @eq:cursor will uphold it after each step of the travelsal. After the preemption point, a new node might be added at the tail, but it does not affect @eq:cursor. When the minimum node is removed, the cursor is emptied, maintaining the invariant.
+
+Regarding complexity, the algorithm is trivially $cal(O)(N)$, as we need to traverse the entire list to find the minimum element. In case of preemption by another dispatch handler, the stealing mechanism allows the higher priority handler to continue the traversal on behalf of the preempted handler. The highest priority dispatch handler will execute to completion, set the stolen cursor to `None`, dequeue and return the minimum element. Thus, we can conclude that each element is inspected exactly once, which leads us to conclude that the (amortized) complexity remains $cal(O)(N)$, even in presence of preemptive execution among dispatch handlers. As an effect, the `extractMin` will always complete at the highest preemption level among the dispatch handlers, thus ensuring dispatch latency and jitter to be free of any priority inversion inferred by shared priority queue accesses.
+
+Moreover, the for each element traversed we cross a preemption point, ensuring that the blocking is bounded and constant time $cal(O)(1)$.
+
+#figure(
+  placement: none,
+  ```rust
+  pub fn extractMin(&mut self, mock_test: MockTest) -> Option<T> {
+      CsSingleCore::with(|mut cs| {
+          // steal or create new cursor
+          // search minimal element in loop
+          while let Some(next_index) = self.next[current_index as usize] {
+              let next_value = unsafe { self.data[next_index as usize].assume_init() };
+              if next_value < self.cursor.unwrap().min_value {
+                  self.cursor = Some(Cursor {
+                      min_value: next_value,
+                      min_index: Some(current_index),
+                      current_index: next_index,
+                  });
+              }
+              self.cursor.replace(Cursor {
+                  current_index: next_index,
+                  ..self.cursor.unwrap()
+              });
+
+              CsSingleCore::preemption_point(&_cs);
+
+              if let Some(cursor) = self.cursor {
+                  current_index = cursor.current_index;
+              } else {
+                  break;
+              }
+          }
+          // retire cursor (None value)
+          // dequeue and return minimal element if any
+      }
+  }
+  ```,
+  caption: [Priority Queue `extractMin` operation.],
+) <fig:pq_extractMin>
+
+Reflecting the implementation to the foralization, the `extractMin` method is devided to critical sections corresponding the _forwardCursor_ and _extractFoundMin_ transformations and is compliant with the transformation definitions in @table:cursor-operations and @table:extract-min.
 
 
 
