@@ -4,3 +4,4 @@ Cargo.lock
 figs/*.dtmp
 .$*
 build/
+.vscode/

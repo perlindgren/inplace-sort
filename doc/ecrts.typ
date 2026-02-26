@@ -1,6 +1,6 @@
 
-#import "@preview/bananote:0.1.2": *
 #import "@preview/dashy-todo:0.1.3": todo
+#import "../para-lipics/lib.typ": *
 #import "@preview/subpar:0.2.2"
 #import "@preview/abbr:0.3.0"
 
@@ -43,56 +43,71 @@
   inset: 10pt,
   radius: 4pt,
   width: 100%,
-)[#grid(columns: (1em, 1fr), align: (right, left), column-gutter: 0.7em, row-gutter: 0.6em, ..it
-    .lines
-    .enumerate()
-    .map(((i, line)) => (style-number(i + 1), line))
-    .flatten())]
-
-#show: note.with(
-  title: [A Concurrent Priority Queue with Constant-Time Blocking for EDF based hard Real-Time Scheduling],
-  authors: (
-    ([Anonymous], []),
-    //(name: "Anonymous"),
-    // (
-    //   name: "Anonymous authors for review",
-    //   department: [Anonymous],
-    //   organization: [Anonymous],
-    //   location: [Anonymous],
-    //   email: "anonymous@example.com",
-    // ),
-    // (
-    //   name: "Anonymous authors for review",
-    //   department: [Anonymous],
-    //   organization: [Anonymous],
-    //   location: [Anonymous],
-    //   email: "anonymous@example.com",
-    // ),
-  ),
-)
-
-#abstract: [
-In @DP scheduling, kernels generally rely on priority queues to select the task to be executed. The choice of queue implementation introduces tradeoffs with respect to software overhead, memory usage and blocking times. A key consideration is thread-safety and memory safety. In this paper, we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$ upper bound on inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin` operations. The queue is implemented as a linked list backed by a fixed-size array, and can be allocated either statically, on the heap or on the stack. Potential applications include real-time scheduling, event management, and graph algorithms where
-predictable and minimal blocking times are paramount.
-
-For the implementation we leverage on the strong typing and memory safety guarantees of the Rust systems level programming language. In order to obtain constant upper bound blocking we propose an extension to the `critical-section` crate, introducing structured and well defined preemption points and preemption regions within a critical section. Finally, we define a set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety of the implementation.
+)[
+  #grid(columns: (1em, 1fr), align: (right, left), column-gutter: 0.7em, row-gutter: 0.6em, ..it
+      .lines
+      .enumerate()
+      .map(((i, line)) => (style-number(i + 1), line))
+      .flatten())
 ]
 
+#let abstract = [
+  In @DP scheduling, kernels generally rely on priority queues to select the task to be executed.
+  The choice of queue implementation introduces tradeoffs with respect to software overhead, memory
+  usage and blocking times. A key consideration is thread-safety and memory safety. In this paper,
+  we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$ upper bound on
+  inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin`
+  operations. The queue is implemented as a linked list backed by a fixed-size array, and can be
+  allocated either statically, on the heap or on the stack. Potential applications include real-time
+  scheduling, event management, and graph algorithms where predictable and minimal blocking times
+  are paramount. For the implementation we leverage on the strong typing and memory safety
+  guarantees of the Rust systems level programming language. In order to obtain constant upper bound
+  blocking we propose an extension to the `critical-section` crate, introducing structured and well
+  defined preemption points and preemption regions within a critical section. Finally, we define a
+  set of key invariants capturing sought properties and soundness of the priority queue, from which
+  we argue the safety of the implementation.
+]
 
-// index-terms: (
-//   "memory safety",
-//   "priority queue",
-//   "concurrency",
-//   "blocking",
-//   "defined behavior",
-//   "real-time",
-//   "data structures",
-//   "critical section",
-// ),
+#show: para-lipics.with(
+  title: [A Concurrent Priority Queue with Constant-Time Blocking for EDF based hard Real-Time
+    Scheduling],
+  authors: (
+    (
+      name: "Per Lindgren",
+      affiliations: "Luleå University of Technology, Sweden",
+      email: "per.lindgren@ltu.se",
+    ),
+    (
+      name: "Justin Beaurivage",
+      affiliations: "Université du Québec à Trois-Rivières, Canada",
+      orcid: "0009-0005-0452-1545",
+      email: "justin.beaurivage@uqtr.ca",
+    ),
+    (
+      name: "Valhe Kouneli",
+      email: "valhe.kouneli@gmail.com",
+      affiliations: "Tampere University, Finland",
+    ),
+  ),
+  copyright: [ Per Lindgren, Justin Beaurivage, Valhe Kouneli],
+  author-running: [P. Lindgren, J. Beaurivage and V. Kouneli],
+  keywords: [memory safety, priority queue, concurrency, blocking, defined behavior, real-time, data
+    structures, critical section],
+  ccs-desc: [Computer systems organization $->$ Real-time systems; Computer systems organization
+    $->$ Embedded software],
+  anonymous: true,
+  line-numbers: true,
+  abstract: abstract,
 
-// bibliography: bibliography("refs.bib"),
-// figure-supplement: [Fig.],
-// )
+  event-long-title: [38th Euromicro Conference on Real-Time Systems],
+  event-acronym: "ECRTS",
+  event-year: 2026,
+  event-short-title: [ECRTS 2026],
+  event-location: [Lund, Sweden],
+  article-no: 99999,
+)
+
+#set math.equation(numbering: "(1)")
 
 = Introduction
 In embedded and real-time systems, @DP scheduler kernel implementations typically rely on @PQ:pla to manage incoming task arrivals and retrieve the highest priority task to be executed. These data structures are challenging to implement correctly and efficiently in a concurrent environment; they have therefore been an area of extensive research.

@@ -1,0 +1,4 @@
+[submodule "para-lipics"]
+	path = para-lipics
+	branch = center-heading-block
+	url = git@github.com:jbeaurivage/para-lipics.git

@@ -27,14 +27,17 @@
               drawio
               typst
               fontconfig
-              gyre-fonts
+              cm_unicode
+              newcomputermodern
+              watchexec
             ];
 
             shellHook = ''
               export FONTCONFIG_FILE=${
                 pkgs.makeFontsConf {
                   fontDirectories = [
-                    "${pkgs.gyre-fonts}/share/fonts"
+                    "${pkgs.cm_unicode}/share/fonts"
+                    "${pkgs.newcomputermodern}/share/fonts"
                   ];
                 }
               }
