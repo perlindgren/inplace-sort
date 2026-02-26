@@ -494,42 +494,44 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
   show table.cell: set text(size: 9pt)
 
   let fig = figure(
-    table(columns: 3, gutter: 25pt,
-    [
-      #math.equation(block: true, numbering: none)[$
-      &T' &=& F \
-      &F' &=& italic("next")(F) \
-      &italic("data")'(x) &=& cases(
-        italic("data")(x)  &"if" x != F,
-        v &"if" x = F
-      ) \
-      &italic("Cur"') &=&  italic("Cur")
-      $]
-    ],
-    [
-      #box[Case 1: $H = emptyset$:
-      #math.equation(block: true, numbering: none)[$
-      &H' &=& F \
-      &"next'"(x) &=& cases(
-        emptyset &"if" x = F,
-        italic("next")(x) &"if" x != F
-      )
-      $]]
-    ],
-    [
-      #box[
-      Case 2: $H != emptyset$:
-      #math.equation(block: true, numbering: none)[$
-      &H' &=& H \
-      &"next'"(x) &=& cases(
-        F &"if" x = T,
-        emptyset &"if" x = F,
-        italic("next")(x) &"otherwise"
-      )
-      $]]
-    ]
+    table(
+      columns: 3,
+      gutter: 25pt,
+      [
+        #math.equation(block: true, numbering: none)[$
+          & T'                 & = & F \
+          & F'                 & = & italic("next")(F) \
+          & italic("data")'(x) & = & cases(
+                                       italic("data")(x) & "if" x != F,
+                                       v & "if" x = F
+                                     ) \
+          & italic("Cur"')     & = & italic("Cur")
+        $]
+      ],
+      [
+        #box[Case 1: $H = emptyset$:
+          #math.equation(block: true, numbering: none)[$
+            & H'         & = & F \
+            & "next'"(x) & = & cases(
+                                 emptyset & "if" x = F,
+                                 italic("next")(x) & "if" x != F
+                               )
+          $]]
+      ],
+      [
+        #box[
+          Case 2: $H != emptyset$:
+          #math.equation(block: true, numbering: none)[$
+            & H'         & = & H \
+            & "next'"(x) & = & cases(
+                                 F & "if" x = T,
+                                 emptyset & "if" x = F,
+                                 italic("next")(x) & "otherwise"
+                               )
+          $]]
+      ],
     ),
-    caption: [Formalization of the atomic _insert_ $v$ operation, i.e., the _insert_ $v$ transformation.]
+    caption: [Formalization of the atomic _insert_ $v$ operation, i.e., the _insert_ $v$ transformation.],
   )
   [#fig <table:insert>]
 }
@@ -539,46 +541,44 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
   show table.cell: set text(size: 9pt)
 
   let fig = figure(
-    table(columns: 2, gutter: 10pt,
-    table.cell(colspan: 2)[
-      Case 1: $"Cur" = emptyset$ 
-    ],
-    table.cell(colspan: 2)[
-      Case 2: $"Cur" = (C, italic("prev"), min)$
-    ],
-    [
-      *Case 1a:* $H = emptyset$
+    table(
+      columns: 2,
+      gutter: 10pt,
+      table.cell(colspan: 2)[
+        Case 1: $"Cur" = emptyset$
+      ],
+      table.cell(colspan: 2)[
+        Case 2: $"Cur" = (C, italic("prev"), min)$
+      ],
+      [
+        *Case 1a:* $H = emptyset$
 
-      #math.equation(block: true, numbering: none)[$italic("Cur"') =
-        (H, emptyset, italic("data")(H))
-      $]
-    ],
-    [
-      *Case 1b:* $H != emptyset$
+        #math.equation(block: true, numbering: none)[$italic("Cur"') =
+        (H, emptyset, italic("data")(H))$]
+      ],
+      [
+        *Case 1b:* $H != emptyset$
 
-      #math.equation(block: true, numbering: none)[$italic("Cur"') =
-        emptyset
-      $]
-    ],
-    table.cell(colspan: 2)[
-      *Case 2:* $italic("Cur") = (C, italic("min"), italic("prev"))$
-    ],
-    table.cell(colspan: 2)[
-      *Assuming* $C != T$
+        #math.equation(block: true, numbering: none)[$italic("Cur"') =
+        emptyset$]
+      ],
+      table.cell(colspan: 2)[
+        *Case 2:* $italic("Cur") = (C, italic("min"), italic("prev"))$
+      ],
+      table.cell(colspan: 2)[
+        *Assuming* $C != T$
 
-      #math.equation(block: true, numbering: none)[$
-      &"Cur'" &=& (italic("next")(C), min(min, italic("data")(italic("next")(C))), italic("prev"')),
-      \
-      &"where"
-      \
-      &italic("prev"') &=& cases(
-        italic("prev") &"if" min &=& min(min\, italic("data")(italic("next")(C))),
-        C &"if" italic("data")(italic("next")(C)) &=& min(min\, italic("data")(italic("next")(C)))
-      )
-      $]
-    ]
+        #math.equation(block: true, numbering: none)[$
+          & "Cur'"          & = & (italic("next")(C), min(min, italic("data")(italic("next")(C))), italic("prev"')), \
+          & "where" \
+          & italic("prev"') & = & cases(
+                                    italic("prev") & "if" min & = & min(min\, italic("data")(italic("next")(C))),
+                                    C & "if" italic("data")(italic("next")(C)) & = & min(min\, italic("data")(italic("next")(C)))
+                                  )
+        $]
+      ],
     ),
-    caption: [Formalization of the atomic operation of the cursor traversing the list, i.e., the _forwardCursor_ transformation.]
+    caption: [Formalization of the atomic operation of the cursor traversing the list, i.e., the _forwardCursor_ transformation.],
   )
   [#fig <table:cursor-operations>]
 }
@@ -587,63 +587,64 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
   show table.cell: set text(size: 9pt)
 
   let fig = figure(
-    table(columns: 2, gutter: 10pt,
-    table.header(),
-    table.cell(colspan: 2)[
-      Assume $C = T$
-    ],
-    table.cell(colspan: 2)[
-      *Case 0:* $H = emptyset$
+    table(
+      columns: 2,
+      gutter: 10pt,
+      table.header(),
+      table.cell(colspan: 2)[
+        Assume $C = T$
+      ],
+      table.cell(colspan: 2)[
+        *Case 0:* $H = emptyset$
 
-      State does not change,
-      _extractMin_ returns $emptyset$
-    ],
-    [
-      *Case 1:* $italic("prev") = emptyset$
-      #math.equation(block: true, numbering: none)[$
-        &H' &=& cases(
-          T &"if" T = H,
-          italic("next")(H) &"if" T!=H
-        )\
-        &T' &=& T \
-        &F' &=& H \
-        &"next'"(x) &=& cases(
-          F &"if" x = H,
-          italic("next")(x) &"if" x != H
-        ) \
-        &italic("data")' &=& italic("data") \
-        &italic("Cur") &=& emptyset
+        State does not change,
+        _extractMin_ returns $emptyset$
+      ],
+      [
+        *Case 1:* $italic("prev") = emptyset$
+        #math.equation(block: true, numbering: none)[$
+          & H'              & = & cases(
+                                    T & "if" T = H,
+                                    italic("next")(H) & "if" T!=H
+                                  ) \
+          & T'              & = & T \
+          & F'              & = & H \
+          & "next'"(x)      & = & cases(
+                                    F & "if" x = H,
+                                    italic("next")(x) & "if" x != H
+                                  ) \
+          & italic("data")' & = & italic("data") \
+          & italic("Cur")   & = & emptyset
+        $]
 
-      $]
+      ],
+      [
+        *Case 2:* $italic("prev") != emptyset$
 
-    ],
-    [
-      *Case 2:* $italic("prev") != emptyset$
-
-      #math.equation(block: true, numbering: none)[$
-        &H' &=& H \
-        &T' &=& cases(
-          italic("prev") &"if" T = italic("next")(italic("prev")),
-          T &"if" T != italic("next")(italic("prev"))
-        ), \
-        &F' &=& H \
-        &"next'"(x) &=& cases(
-          F &"if" x = H,
-          italic("next")(italic("next")(italic("prev"))) &"if" x = italic("prev"),
-          italic("next")(x) &"otherwise"
-        ) \
-        &italic("data")' &=& italic("data") \
-        &italic("Cur") &=& emptyset
-      $]
-    ],
-    [
-      Return $italic(min)$
-    ],
-    [
-      Return $italic(min)$
-    ]
+        #math.equation(block: true, numbering: none)[$
+          & H'              & = & H \
+          & T'              & = & cases(
+                                    italic("prev") & "if" T = italic("next")(italic("prev")),
+                                    T & "if" T != italic("next")(italic("prev"))
+                                  ), \
+          & F'              & = & H \
+          & "next'"(x)      & = & cases(
+                                    F & "if" x = H,
+                                    italic("next")(italic("next")(italic("prev"))) & "if" x = italic("prev"),
+                                    italic("next")(x) & "otherwise"
+                                  ) \
+          & italic("data")' & = & italic("data") \
+          & italic("Cur")   & = & emptyset
+        $]
+      ],
+      [
+        Return $italic(min)$
+      ],
+      [
+        Return $italic(min)$
+      ],
     ),
-    caption: [Formalization of the atomic operation of extracting the found min, i.e., the _extractFoundMin_ transformation.]
+    caption: [Formalization of the atomic operation of extracting the found min, i.e., the _extractFoundMin_ transformation.],
   )
   [#fig <table:extract-min>]
 }
@@ -654,15 +655,15 @@ To define the initial state of the data structure, that is the 6-tuple $(H, T, F
 
 For $X in N$, denote
 $
-{X ->^* } = {n in N mid(|) exists space k in NN_0 : italic("next")^k (X) = n },
+  {X ->^* } = {n in N mid(|) exists space k in NN_0 : italic("next")^k (X) = n },
 $
 i.e., ${X ->^* }$ is the set of nodes reachable from $X$ by applying $italic("next")$ zero or more times, and
 $
-{X ->^+ } = {n in N mid(|) exists space k in NN_+ : italic("next")^k (X) = n },
+  {X ->^+ } = {n in N mid(|) exists space k in NN_+ : italic("next")^k (X) = n },
 $
 i.e., ${X ->^+ }$ is the set of nodes reachable from $X$ by applying $italic("next")$ one or more times. If $X$ is empty, both notations equal the empty set $emptyset$. Additionally, we define a predicate $"List"(X)$ that says node $X$ starts a linked list without any loops, i.e,
 $
-"List"(X) = forall n in {x ->^*}: not(n ->^+ n).
+  "List"(X) = forall n in {x ->^*}: not(n ->^+ n).
 $
 
 The data structure is initialized as follows: $H, T, italic("Cur") = emptyset$, $T in N$, and the $italic("next")$ function is initialized in any way to satisfy $"List"(F)$, ${F ->^*} = N$. The list-order of nodes does not matter, as long as the list starting from $F$ contains all the nodes. The function $italic("data")$ at the intitial state is arbitrary.
@@ -691,8 +692,7 @@ The invariants describing the data structure are:
     C in {H -> *},
     italic(min) = min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
     italic("prev") "is empty and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
-  )
-  $
+  )$,
 )<eq:cursor>
 
 @eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer and the set of nodes reachable from the free pointer. As a corollary, we can infer that nodes reachable from $H$ head and $F$ free are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust. Allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
@@ -759,7 +759,7 @@ Reflecting the implementation to the formalization, setting `head`, `tail` and `
 The `insert` operation (@fig:pq_insert) is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
 
 The `insert` operation allocates (removes) a node $A$ from the free list ($F$), initializes it and inserts it at the tail ($T$) of the allocated list ($H$), honoring @eq:nodes and @eq:no-loops.
-_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds. 
+_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
 
 Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
 
