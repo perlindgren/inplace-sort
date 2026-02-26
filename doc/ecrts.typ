@@ -487,7 +487,7 @@ The restart-free implementation ensures that the amortized work for _extractMin_
 Rust comes with strong safety guarantees, based on a strict type system, ownership and borrowing rules. However, in order to implement a concurrent priority queue, we need to occasionally opt-out of these guarantees using the `unsafe` keyword to manage shared mutable state. For the unsafe code, it is the responsibility of the developer to ensure soundness. In the following we will outline key safety
 invariants for our implementation based on the below invariants:
 
-Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Let $italic("Cur")$ be the cursor used by _extractMin_, and if it's not empty, let $C$, and $italic(min)$,  $italic("prev")$ be the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively. For $X in N$, denote ${X ->^* } =$#box[${n in N mid(|) exists space k in NN_0 : "next"^k (X) = n }$] and ${X ->^+ } = $#box[${n in N mid(|) exists space k in NN_+ : "next"^k (X) = n }$]. If $X$ is empty, both notations equal the empty set $emptyset$.
+Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Let $italic("Cur")$ be the cursor used by _extractMin_, and if it's not empty, let $C$, and $italic(min)$,  $italic("prev")$ be the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively. For $X in N$, denote ${X ->^* } =$#box[${n in N mid(|) exists space k in NN_0 : "next"^k (X) = n }$] and ${X ->^+ } =$#box[${n in N mid(|) exists space k in NN_+ : "next"^k (X) = n }$]. If $X$ is empty, both notations equal the empty set $emptyset$.
 
 #math.equation(
   block: true,
@@ -509,8 +509,7 @@ Let $N$ be the set of (statically) allocated nodes, and $H, F, T$ denote the nod
     C in {H -> *},
     italic(min) = min("value"(n) mid(|) n in {H ->^*} \\ {C ->^+}),
     italic("prev") "is empty and" italic(min) = "value"(H)\, "or" "value"("next"("prev")) = italic(min)
-  )
-  $
+  )$,
 )<eq:cursor>
 
 @eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of nodes reachable from the head pointer and the set of nodes reachable from the free pointer. As a corollary, we can infer that nodes reachable from $H$ head and $F$ free are in $N$, i.e., allocated. This invariant is crucial for ensuring that we never access memory outside of our allocated nodes, which would lead to @UB in Rust. Allocation/free and enqueue/dequeue operations are ensured to re-cycle the allocated nodes $N$.
@@ -571,7 +570,7 @@ Blocking time is not a concern for the `new` function. In case of static allocat
 The `insert` operation (@fig:pq_insert) is responsible for adding a new value to the priority queue. The operation first checks if there is a free node available by checking the `free` pointer. If the queue is full (i.e., `free` is `None`), it returns a `QueueFull` error. Otherwise, it retrieves the index of the free node, initializes it with the new value, updates the `free` pointer to the next free node, and updates the linked list pointers accordingly. Invariants as follows:
 
 The `insert` operation allocates (removes) a node $A$ from the free list ($F$), initializes it and inserts it at the tail ($T$) of the allocated list ($H$), honoring @eq:nodes and @eq:no-loops.
-_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds. 
+_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus @eq:initialized holds.
 
 Manipulation of the priority queue is protected by a (global) critical section, thus safe. All operations are constant time $cal(O)(1)$.
 
