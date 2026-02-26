@@ -493,9 +493,9 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
 
   let fig = figure(
     table(
-      stroke: none,
-      columns: 3,
-      gutter: 25pt,
+      stroke: (x, y) => if x == 1 { (left: (thickness: 0.5pt, paint: luma(200))) },
+      columns: (1fr, 1fr, 1fr),
+      gutter: 2pt,
       [
         #math.equation(block: true, numbering: none)[$
           & T'                 & = & F \
@@ -542,13 +542,11 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
   let fig = figure(
     table(
       columns: 2,
-      gutter: 10pt,
-      stroke: none,
+      gutter: 2pt,
+      stroke: (x, y) => if y == 2 { (top: (thickness: 0.5pt, paint: luma(200))) },
+      row-gutter: 0.5em,
       table.cell(colspan: 2)[
         Case 1: $"Cur" = emptyset$
-      ],
-      table.cell(colspan: 2)[
-        Case 2: $"Cur" = (C, italic("prev"), min)$
       ],
       [
         *Case 1a:* $H = emptyset$
@@ -563,6 +561,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
         emptyset$]
       ],
       table.cell(colspan: 2)[
+        #v(0.5em)
         *Case 2:* $italic("Cur") = (C, italic("min"), italic("prev"))$
       ],
       table.cell(colspan: 2)[
@@ -589,11 +588,10 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
   let fig = figure(
     table(
       columns: 2,
-      gutter: 10pt,
-      stroke: none,
-      table.header(),
+      gutter: 2pt,
+      stroke: (x, y) => if y == 2 or y == 1 { (top: (thickness: 0.5pt, paint: luma(200)))} + if x>0 { (left: (thickness: 0.5pt, paint: luma(200)))},
       table.cell(colspan: 2)[
-        Assume $C = T$
+        #text(weight: "regular")[Assume] $C = T$
       ],
       table.cell(colspan: 2)[
         *Case 0:* $H = emptyset$
