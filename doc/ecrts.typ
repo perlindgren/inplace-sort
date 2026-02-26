@@ -529,7 +529,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
       $]]
     ]
     ),
-    caption: [Formalization of the _insert_ $v$ operation/transformation.]
+    caption: [Formalization of the atomic _insert_ $v$ operation, i.e., the _insert_ $v$ transformation.]
   )
   [#fig <table:insert>]
 }
@@ -578,7 +578,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
       $]
     ]
     ),
-    caption: [Formalization of extracting the found min, or the _extractFoundMin_ transformation.]
+    caption: [Formalization of the atomic operation of the cursor traversing the list, i.e., the _forwardCursor_ transformation.]
   )
   [#fig <table:cursor-operations>]
 }
@@ -589,6 +589,9 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
   let fig = figure(
     table(columns: 2, gutter: 10pt,
     table.header(),
+    table.cell(colspan: 2)[
+      Assume $C = T$
+    ],
     table.cell(colspan: 2)[
       *Case 0:* $H = emptyset$
 
@@ -640,7 +643,7 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
       Return $italic(min)$
     ]
     ),
-    caption: "Extracting the minimum"
+    caption: [Formalization of the atomic operation of extracting the found min, i.e., the _extractFoundMin_ transformation.]
   )
   [#fig <table:extract-min>]
 }
