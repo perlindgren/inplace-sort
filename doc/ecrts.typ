@@ -56,7 +56,7 @@
   The choice of queue implementation introduces tradeoffs with respect to software overhead, memory
   usage and blocking times. A key consideration is thread-safety and memory safety. In this paper,
   we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$ upper bound on
-  inferred blocking, as well as $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin`
+  inferred blocking, as well as $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin`
   operations. The queue is implemented as a linked list backed by a fixed-size array, and can be
   allocated either statically, on the heap or on the stack. Potential applications include real-time
   scheduling, event management, and graph algorithms where predictable and minimal blocking times
@@ -119,7 +119,7 @@ Some work has gone into implementing lock-free or concurrent @PQ:pla: the mound 
 In this paper we propose a concurrent priority queue implementation leveraging Rust's strong typing and memory safety guarantees. Our approach is based on mutual-exclusion implemented as interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
 Key contributions of this work include:
-- An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert`, $cal(O)(1)$ `min` and $cal(O)(N)$ `extractMin` operations.
+- An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin` operations.
 - An extension to the embedded Rust foundational `critical-section` crate, introducing structured preemption points and preemption regions within a critical section. For our proposal, we present safety argumentation and show compliance to rust ownership and borrowing rules.
 - A set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety and soundness of the implementation.
 - Leveraging the proposed preemption point abstraction we show that worst case blocking time has a constant upper bound of $cal(O)(1)$, thus suitable for hard real-time scheduling applications.
@@ -131,8 +131,8 @@ Key contributions of this work include:
 @PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common priority queues, elements are allowed to be extracted under some given ordering. Classical implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
 We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt handlers:
-+ They are first signalled to an arrival handler $A_i$. This handler captures the task's arrival timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue the task in a priority queue for later retrieval and execution (@fig:arrival-handler and @fig:interrupt-handler top).
-+ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch handler take as scheduling decision. If `min(PQ)` has an absolute deadline which is shorter than the next task to execute's deadline, then the highest priority task is extracted from `extractMin(PQ)` and dispatched (@fig:interrupt-handler bottom).
++ They are first signalled to an arrival handler $A_i$. This handler captures the task's arrival timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue the task in a priority queue using `insert` for later retrieval and execution (@fig:arrival-handler and @fig:interrupt-handler top).
++ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch handler take as scheduling decision. If the job with the earliest absolute deadline in the queue, extracted with `extractMin`, has an absolute deadline shorter than the next task to execute's deadline, then that job is dispatched (@fig:interrupt-handler bottom); otherwise the extracted job is enqueued again. The operation can be optimized by implementing an additional method `min` with $cal(O)(1)$ that returns the earliet absolute deadline of enqueued jobs, but the implementation details are outside the scope of this paper.
 + The priority of arrival and dispatch handlers is determined according to relative task deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize time-stamp jitter.
 
 Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
@@ -467,8 +467,6 @@ In the following we sketch the design and implementation of an in-place, concurr
 For the sake of simplicity, we implement the priority queue as a linked list backed by a fixed-size array (@fig:extract-min). In-place operations are achieved by maintaining a free list of available nodes.
 
 - _insert_: Insertion is unsorted: elements are appended at the tail of the list. Node updates are protected by a critical section, which is implemented by disabling interrupts. This critical section is of constant time $cal(O)(1)$, as it only involves mutating a single node.
-
-- _min_: At all times, the data structure maintains a record of its minimum element separately from the main linked list, allowing a $cal(O)(1)$ `min` operation. This record of the minimum element is updated at every list mutation (i.e., _insert_ and on _extractMin_), guaranteeing it remains synchronized with the main data structure.
 
 - _extractMin_: Extraction of the minimum element is performed by traversing the list from head to tail to find the minimum element, and then removing it from the list. This operation has a time complexity of $cal(O)(N)$, where $N$ is the number of elements in the queue. However, since all insertions are performed exclusively and atomically--via a critical section--at the queue tail, inspecting all nodes guarantees that the minimum element of the list is found, since no node can be inserted at a location already traversed by the reader pointer. Moreover, critical sections can be limited to the length of inspecting or mutating a single node--and are thus constant-time ($cal(O)(1)$).
 
