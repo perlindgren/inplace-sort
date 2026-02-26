@@ -786,7 +786,6 @@ Reflecting the implementation to the formalization, the `insert` method is an at
   ```,
   caption: [Priority Queue `insert` operation.],
 ) <fig:pq_insert>
-}
 
 
 === API: `extractMin(&mut self) -> Option<T>`<sec:extractMin>
