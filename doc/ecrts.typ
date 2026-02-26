@@ -684,7 +684,7 @@ The invariants describing the data structure are:
 
 #math.equation(supplement: [Invariant],
   block: true,
-  $T "is not empty" => T in {H ->^*} "and" italic("next")(T) "is empty"$,
+  $T != emptyset => T in {H ->^*} "and" italic("next")(T) = emptyset$,
 )<eq:tail_in_head>
 
 #math.equation(supplement: [Invariant],
@@ -692,7 +692,7 @@ The invariants describing the data structure are:
   $italic("Cur") "is not empty" => cases(
     C in {H -> *},
     italic(min) = min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
-    italic("prev") "is empty and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
+    italic("prev") = emptyset "and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
   )$,
 )<eq:cursor>
 
