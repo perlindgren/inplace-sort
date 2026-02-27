@@ -717,11 +717,11 @@ node specified by the _previous pointer_, respectively.
         *Assuming* $C != T$
 
         #math.equation(block: true, numbering: none)[$
-          & "Cur'" & = & (italic("next")(C), min(min, italic("data")(italic("next")(C))), italic("prev"')), \
+          & "Cur'" & = & (italic("next")(C), min(italic(min), italic("data")(italic("next")(C))), italic("prev"')), \
           & "where" \
           & italic("prev"') & = & cases(
-            italic("prev") & "if" min & = & min(min\, italic("data")(italic("next")(C))),
-            C & "if" italic("data")(italic("next")(C)) & = & min(min\, italic("data")(italic("next")(C)))
+            italic("prev") & "if" italic(min) & = & min(italic(min)\, italic("data")(italic("next")(C))),
+            C & "if" italic("data")(italic("next")(C)) & = & min(italic(min)\, italic("data")(italic("next")(C)))
           )
         $]
       ],
