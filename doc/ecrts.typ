@@ -170,7 +170,7 @@ handlers:
   extracted with `extractMin`, has an absolute deadline shorter than the next task to execute's
   deadline, then that job is dispatched (@fig:interrupt-handler bottom); otherwise the extracted job
   is enqueued again. The operation can be optimized by implementing an additional method `min` with
-  $cal(O)(1)$ that returns the earliet absolute deadline of enqueued jobs, but the implementation
+  $cal(O)(1)$ that returns the earliest absolute deadline of enqueued jobs, but the implementation
   details are outside the scope of this paper.
 + The priority of arrival and dispatch handlers is determined according to relative task
   deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher
