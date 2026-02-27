@@ -702,13 +702,11 @@ index of the free node, initializes it with the new value, updates the `free` po
 free node, and updates the linked list pointers accordingly. Invariants as follows:
 
 The `insert` operation allocates (removes) a node $A$ from the free list ($F$), initializes it and
-inserts it at the tail ($T$) of the allocated list ($H$), honoring Equations #ref(
-  <eq:nodes>,
-  supplement: none,
-) and #ref(<eq:no-loops>, supplement: none). _Assuming_ $T$ indicates the tail of $H$, the new tail
-$T'$ is the allocated node $A$, thus @eq:tail_in_head holds. As we add an _initialized_ node $A$ to
-the set of _assumed_ initialized nodes reachable from $H$ the set of nodes reachable from $H$
-remains initialized, thus @eq:initialized holds.
+inserts it at the tail ($T$) of the allocated list ($H$), honoring @eq:nodes and @eq:no-loops.
+_Assuming_ $T$ indicates the tail of $H$, the new tail $T'$ is the allocated node $A$, thus
+@eq:tail_in_head holds. As we add an _initialized_ node $A$ to the set of _assumed_ initialized
+nodes reachable from $H$ the set of nodes reachable from $H$ remains initialized, thus
+@eq:initialized holds.
 
 Manipulations of the priority queue in this API are protected by a (global) critical section, thus
 safe. All operations are constant time $cal(O)(1)$.
