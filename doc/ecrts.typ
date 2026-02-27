@@ -145,7 +145,7 @@ Key contributions of this work include:
 - Leveraging the proposed preemption point abstraction we show that worst case blocking time has a
   constant upper bound of $cal(O)(1)$, thus suitable for hard real-time scheduling applications.
 - By introducing a work-stealing mechanism, the amortized complexity can maintain the $cal(O)(N)$
-  `extractMin`, even in the current case.
+  `extractMin`, even in the concurrent case.
 - Applied to an @EDF scheduler, the proposed design allows for minimal task dispatch latency, free
   of priority inversion, and with minimal jitter.
 
