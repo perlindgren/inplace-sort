@@ -329,7 +329,7 @@ structure of nodes: $italic("next"): N -> N union {emptyset}$ is a function defi
 for each node. Another implementation-agnostic function describes the values associated to some
 nodes: $italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes.
 Not all nodes have an associated value (they might be uninitialized), meaning the domain of
-$italic("data")$ is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
+$italic("data")$ does not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
 
 Finally, let
 $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$
