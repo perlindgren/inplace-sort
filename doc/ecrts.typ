@@ -134,8 +134,8 @@ and memory safety guarantees. Our approach is based on mutual-exclusion implemen
 interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
 Key contributions of this work include:
-- An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert` and
-  $cal(O)(N)$ `extractMin` operations.
+- A formal desciption and an implementation of an in-place, array-based linked list priority queue
+  implementation, with $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin` operations.
 - An extension to the embedded Rust foundational `critical-section` crate#footnote[Rust terminology
     for library], introducing structured preemption points and preemption regions within a critical
   section. For our proposal, we present safety argumentation and show compliance to rust ownership
