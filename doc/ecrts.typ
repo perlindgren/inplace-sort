@@ -54,10 +54,10 @@
   event management, and graph algorithms where predictable and minimal blocking times are paramount.
   For the implementation we leverage on the strong typing and memory safety guarantees of the Rust
   systems level programming language. In order to obtain constant upper bound blocking we propose an
-  extension to the `critical-section` crate, introducing structured and well defined preemption
-  points and preemption regions within a critical section. Finally, we define a set of key
-  invariants capturing sought properties and soundness of the priority queue, from which we argue
-  the safety of the implementation.
+  extension to the `critical-section` crate#footnote[Library in Rust terminology], introducing
+  structured and well defined preemption points and preemption regions within a critical section.
+  Finally, we define a set of key invariants capturing sought properties and soundness of the
+  priority queue, from which we argue the safety of the implementation.
 ]
 
 #show: para-lipics.with(
@@ -222,17 +222,17 @@ executing preemptively, thus the underlying data structure must implement the `S
 
 == Rust Embedded Ecosystem
 
-The Rust Embedded Working Group #todo[reference] develops and maintains a set of foundational
-libraries and tools for embedded development in Rust. Among these, the `critical-section`
-#todo[reference] crate provides a generic _critical section_ abstraction. The crate defines a trait
-`Impl` to be implemented for each supported target architecture (@fig:rust-cs-trait). In the context
-of single-core bare-metal embedded systems, the `acquire` and `release` functions associated to the
-`Impl` trait are typically implemented by disabling and enabling interrupts, respectively. By
-design, exactly one implementation of the `Impl` trait must be provided for a given application.
-This property is crucial for ensuring that the critical section abstraction is sound, as it prevents
-the user from accidentally mixing multiple conflicting implementations, which would lead to @UB by
-breaking Rust's memory safety guarantees laid out by way of the type system. Any attempt to break
-the uniqueness property is rejected at compile time.
+The Rust Embedded Working Group develops and maintains a set of foundational libraries and tools for
+embedded development in Rust. Among these, the `critical-section` crate provides a generic _critical
+section_ abstraction @critical_section. The crate defines a trait `Impl` to be implemented for each
+supported target architecture (@fig:rust-cs-trait). In the context of single-core bare-metal
+embedded systems, the `acquire` and `release` functions associated to the `Impl` trait are typically
+implemented by disabling and enabling interrupts, respectively. By design, exactly one
+implementation of the `Impl` trait must be provided for a given application. This property is
+crucial for ensuring that the critical section abstraction is sound, as it prevents the user from
+accidentally mixing multiple conflicting implementations, which would lead to @UB by breaking Rust's
+memory safety guarantees laid out by way of the type system. Any attempt to break the uniqueness
+property is rejected at compile time.
 
 Leveraging on Rust's *zero-cost* abstractions, the `critical_section` crate defines a closure-based
 API enforcing strict nesting to ensure that the interrupt state is properly restored. The user
@@ -1200,12 +1200,12 @@ With the priority queue as an example, we have shown the $cal(O)(N)$ _extractMin
 be split into $N$ $cal(O)(1)$ operations, segmented at a well defined preemption point within the
 overarching critical section.
 
-The `critical-section` crate, approaching 40 million downloads at the time of writing, is
-_foundational_ within the Rust embedded ecosystem. In its current form, the API provides a powerful
-abstraction for critical sections, but lacks the expressiveness to allow for preemption regions
-within critical sections. The proposed extension addresses this gap, providing a more flexible API
-that can be used to implement a wider range of concurrent data structures and algorithms, while
-still maintaining the safety guarantees of Rust.
+The `critical-section` crate, approaching 40 million downloads at the time of writing
+@critical_section, is _foundational_ within the Rust embedded ecosystem. In its current form, the
+API provides a powerful abstraction for critical sections, but lacks the expressiveness to allow for
+preemption regions within critical sections. The proposed extension addresses this gap, providing a
+more flexible API that can be used to implement a wider range of concurrent data structures and
+algorithms, while still maintaining the safety guarantees of Rust.
 
 == Future work
 
