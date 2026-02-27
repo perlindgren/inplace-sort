@@ -149,8 +149,9 @@ Key contributions of this work include:
 - Applied to an @EDF scheduler, the proposed design allows for minimal task dispatch latency, free
   of priority inversion, and with minimal jitter.
 
-= Background and Motivation -- @EDF:lo Scheduling
-<sec:background>
+= Background and Motivations
+
+== @EDF:lo Scheduling<sec:background:edf>
 @PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
 priority queues, elements are allowed to be extracted under some given ordering. Classical
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
@@ -187,14 +188,14 @@ following properties:<sec:requirements>
 
 #figure(
   placement: auto,
-  image("../build/figs/arrival_handler.pdf", width: 90%),
+  image("../build/figs/arrival_handler.pdf", width: 70%),
   caption: [Example implementation of an @EDF arrival handler $A_i$.],
 )
 <fig:arrival-handler>
 
 #figure(
   placement: auto,
-  image("../build/figs/interrupt.pdf", width: 90%),
+  image("../build/figs/interrupt.pdf", width: 70%),
   caption: [Arrival and dispatch handlers sorted by preemption level. Arrival handlers are assigned
     higher priorities to minimize time-stamp jitter.],
 )
@@ -208,8 +209,7 @@ following properties:<sec:requirements>
 )
 <fig:extract-min>
 
-= Background: The Rust Programming Language
-
+== The Rust Programming Language<sec:background:rust>
 Rust is a strongly-typed systems level programming language with a focus on safety and performance.
 Rust's ownership model and borrowing rules provide strong memory safety guarantees, preventing
 common issues resulting in undefined behaviour such as null pointer dereferences, buffer overflows,
@@ -532,7 +532,7 @@ the entrance point of inner sections.
    8000490: f38c 8810    	msr	primask, r12
    8000494: e7fe         	b	0x8000494 <cm_preempt::__cortex_m_rt_main::h7b4e7a516b59e2fb+0x58> @ imm = #-0x4
   ```,
-  caption: [ARM v7em, disassembly of @fig:rust-preemption-example, showcasing the Rust zero-cost
+  caption: [ARMv7-EM disassembly of @fig:rust-preemption-example, showcasing the Rust zero-cost
     abstractions.],
 ) <fig:rust-objdump>
 
@@ -616,25 +616,25 @@ of preemptive execution among dispatch handlers.
 In the following, we present a formalization of the data structure and the algorithm, and later,
 show that the presented implementation matches the formalization. Using the formalization, we define
 properties of the data structure and argue they are invariant under the described operations. The
-invariant properties guarantee the algorithm's correctness under the preemptive executiong
-environment, and ensure no undefined behavior occurs even in the `unsafe` section of the Rust-based
+invariant properties guarantee the algorithm's correctness under a preemptive execution environment,
+and ensure no undefined behavior occurs, even in the `unsafe` sections of the Rust-based
 implementation.
 
 Let $N$ be a finite set of nodes, and $H, F, T in N union {emptyset}$ denote the nodes specified by
-the head pointer, the free pointer, and the tail pointer, respectively. Emptyset $emptyset$ here
-represents a pointer not pointing to anything. Let $V$ be a set of values representing the possible
-values associated to the nodes. An implentation agnostic functions descibes the linked structure of
-nodes: $italic("next"): N -> N union {emptyset}$ is a function defining the next node for each node.
-Another implementation agnostic function desribes the values associated to some nodes:
-$italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes. Not all
-nodes have an associated value (they might be uninitilized), meaning the domain of $italic("data")$
-is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
+the head pointer, the free pointer, and the tail pointer, respectively. The empty set $emptyset$
+here represents a pointer not pointing to anything. Let $V$ be a set of values representing the
+possible values associated to the nodes. An implementation-agnostic function descibes the linked
+structure of nodes: $italic("next"): N -> N union {emptyset}$ is a function defining the next node
+for each node. Another implementation-agnostic function desribes the values associated to some
+nodes: $italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes.
+Not all nodes have an associated value (they might be uninitialized), meaning the domain of
+$italic("data")$ is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
 
 Finally, let
 $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$
-be the cursor used by _extractMin_. If the cursor is not empty, the $C$, and $italic(min)$,
-$italic("prev")$ are the node specified the reader pointer, the minimum value encountered, and the
-node specified by the _previous pointer_, respectively.
+be the cursor used by _extractMin_. If the cursor is not empty, then $C$, $italic(min)$, and
+$italic("prev")$ are the nodes specified by the reader pointer, the minimum value encountered, and
+the node specified by the _previous pointer_, respectively.
 
 #{
   show table.cell: set text(size: 9pt)
@@ -804,11 +804,11 @@ node specified by the _previous pointer_, respectively.
 The data structure is defined as a 6-tuple
 $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, and the operations _insert_ and
 _extractMin_ as transformations
-$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$
+$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur")')$
 of that 6-tuple. Formally, three different transformations are defined: _insert_ (@table:insert),
 _forwardCursor_ (@table:cursor-operations), and _extractFoundMin_ (@table:extract-min). The
 _extractMin_ operation consists of repeated application of _forwardCursor_ until $C=T$, followed by
-an instant application of _extractFoundMin_. Each step of _forwardCursor_ can be intercepted with an
+an instant application of _extractFoundMin_. Each step of _forwardCursor_ can be preempted by an
 _insert_ operation.
 
 To define the initial state of the data structure, that is the 6-tuple
