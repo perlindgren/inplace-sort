@@ -586,7 +586,7 @@ avoid @UB.
 @eq:no-loops states that there are no loops in the lists starting at $H$ and $F$. This is essential
 to guarantee $cal(O)(n)$ for the _extractMin_ operation.
 
-Assuming @eq:no-loops, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it
+Assuming @eq:no-loops, @eq:tail_in_head stipulates that if the tail pointer $T$ is not empty, it
 points to the *last* node in the list reachable from the head pointer $H$. This invariant is crucial
 for ensuring that we can safely assume that appended nodes are inserted at the tail of the list
 reachable from $H$.
