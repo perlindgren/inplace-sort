@@ -151,6 +151,13 @@ Key contributions of this work include:
 
 = Background and Motivations
 
+#figure(
+  placement: auto,
+  image("../build/figs/arrival_handler.pdf", width: 70%),
+  caption: [Example implementation of an @EDF arrival handler $A_i$.],
+)
+<fig:arrival-handler>
+
 == @EDF:lo Scheduling<sec:background:edf>
 @PQ:pla are a cornerstone of @EDF kernel implementations, a @DP scheduling paradigm. In common
 priority queues, elements are allowed to be extracted under some given ordering. Classical
@@ -186,12 +193,7 @@ following properties:<sec:requirements>
 - The implementation should not depend on dynamic memory allocations, and should be resource
   efficient in terms of both memory and CPU usage.
 
-#figure(
-  placement: auto,
-  image("../build/figs/arrival_handler.pdf", width: 70%),
-  caption: [Example implementation of an @EDF arrival handler $A_i$.],
-)
-<fig:arrival-handler>
+
 
 #figure(
   placement: auto,
@@ -239,6 +241,15 @@ API enforcing strict nesting to ensure that the interrupt state is properly rest
 provided closure takes a `CriticalSection` (`CS`) token argument - a zero-sized type that serves as
 a proof that the code is executing under protection of a mutual exclusion. The `CS` token argument
 can neither be leaked outside of the critical section closure, nor created (forged) by user code.
+
+In contrast, traditional @RTOS:pla typically use unstructured interrupt enable and disable
+procedures to create critical sections. The onus then falls on the programmer to respect the implied
+safety invariants laid out for safe access to shared resources, which may not always be obvious,
+especially as the code base gets updated over time. As an example, a security vulnerability
+(CVE-2019-12263) has been uncovered in the VxWorks @RTOS, where improper synchronization of a shared
+resource could lead to a race condition and out-of-bounds access to data @NVDCVE201912263. We
+therefore argue for improved structure in controlling preemption in such a manner that improper use
+would result in compilation errors instead of potential bugs on a running system.
 
 @fig:rust-critical-section shows a minimal example of a critical section closure. The `with`
 function is implemented in terms of the `Impl` trait associated functions `acquire` and `release`.
@@ -1218,6 +1229,7 @@ obtained jitter minimization on scheduling performance.
 Regarding the `critical-section` crate extension, we plan to propose the design to the Rust embedded
 working group, and jointly work towards its inclusion in the foundational crate.
 
+#pagebreak(weak: true)
 #bibliography("refs.bib")
 
 
