@@ -551,7 +551,7 @@ The invariants describing the data structure are:
 #math.equation(
   supplement: [Invariant],
   block: true,
-  $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$,
+  $"List"(H) "and" "List"(F)$,
 )<eq:no-loops>
 
 #math.equation(
