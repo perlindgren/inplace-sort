@@ -341,6 +341,7 @@ the node specified by the _previous pointer_, respectively.
   show table.cell: set text(size: 9pt)
 
   let fig = figure(
+    kind: raw,
     table(
       stroke: (x, y) => if x == 1 { (left: (thickness: 0.5pt, paint: luma(200))) },
       columns: (1fr, 1fr, 1fr),
@@ -383,13 +384,10 @@ the node specified by the _previous pointer_, respectively.
       transformation.],
   )
   [#fig <table:insert>]
-}
 
-
-#{
-  show table.cell: set text(size: 9pt)
 
   let fig = figure(
+    kind: raw,
     table(
       columns: 2,
       gutter: 2pt,
@@ -431,12 +429,10 @@ the node specified by the _previous pointer_, respectively.
       _forwardCursor_ transformation.],
   )
   [#fig <table:cursor-operations>]
-}
 
-#{
-  show table.cell: set text(size: 9pt)
 
   let fig = figure(
+    kind: raw,
     table(
       columns: 2,
       gutter: 2pt,
