@@ -334,7 +334,7 @@ $italic("data")$ does not necessarily contain all of $N$, as implied by the $har
 Finally, let
 $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$
 be the cursor used by _extractMin_. If the cursor is not empty, then $C$, $italic(min)$, and
-$italic("prev")$ are the nodes specified by the reader pointer, the minimum value encountered, and
+$italic("prev")$ are the node specified by the reader pointer, the minimum value encountered, and
 the node specified by the _previous pointer_, respectively.
 
 #{
