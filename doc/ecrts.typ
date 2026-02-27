@@ -54,10 +54,10 @@
   event management, and graph algorithms where predictable and minimal blocking times are paramount.
   For the implementation we leverage on the strong typing and memory safety guarantees of the Rust
   systems level programming language. In order to obtain constant upper bound blocking we propose an
-  extension to the `critical-section` crate#footnote[Library in Rust terminology], introducing
-  structured and well defined preemption points and preemption regions within a critical section.
-  Finally, we define a set of key invariants capturing sought properties and soundness of the
-  priority queue, from which we argue the safety of the implementation.
+  extension to the `critical-section` crate, introducing structured and well defined preemption
+  points and preemption regions within a critical section. Finally, we define a set of key
+  invariants capturing sought properties and soundness of the priority queue, from which we argue
+  the safety of the implementation.
 ]
 
 #show: para-lipics.with(
@@ -820,7 +820,7 @@ bounded and constant time $cal(O)(1)$.
   caption: [Priority Queue `extractMin` operation.],
 ) <fig:pq_extractMin>
 
-Reflecting the implementation to the formalization, the `extractMin` method is devided to critical
+Reflecting the implementation to the formalization, the `extractMin` method is divided into critical
 sections corresponding the _forwardCursor_ and _extractFoundMin_ transformations and is compliant
 with the transformation definitions in @table:cursor-operations and @table:extract-min.
 
