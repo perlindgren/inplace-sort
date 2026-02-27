@@ -326,7 +326,7 @@ the head pointer, the free pointer, and the tail pointer, respectively. The empt
 here represents a pointer not pointing to anything. Let $V$ be a set of values representing the
 possible values associated to the nodes. An implementation-agnostic function descibes the linked
 structure of nodes: $italic("next"): N -> N union {emptyset}$ is a function defining the next node
-for each node. Another implementation-agnostic function desribes the values associated to some
+for each node. Another implementation-agnostic function describes the values associated to some
 nodes: $italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes.
 Not all nodes have an associated value (they might be uninitialized), meaning the domain of
 $italic("data")$ is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
