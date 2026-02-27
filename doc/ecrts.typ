@@ -165,7 +165,7 @@ handlers:
   (@fig:arrival-handler and @fig:interrupt-handler top).
 
 + As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when the
-  dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch
+  dispatch handler is executed by the interrupt controller. When a task completes, the dispatch
   handler makes a scheduling decision. If the job with the earliest absolute deadline in the queue,
   extracted with `extractMin`, has an absolute deadline shorter than the next task to execute's
   deadline, then that job is dispatched (@fig:interrupt-handler bottom); otherwise the extracted job
@@ -811,11 +811,9 @@ bounded and constant time $cal(O)(1)$.
   caption: [Priority Queue `extractMin` operation.],
 ) <fig:pq_extractMin>
 
-Reflecting the implementation to the foralization, the `extractMin` method is devided to critical
+Reflecting the implementation to the formalization, the `extractMin` method is devided to critical
 sections corresponding the _forwardCursor_ and _extractFoundMin_ transformations and is compliant
 with the transformation definitions in @table:cursor-operations and @table:extract-min.
-
-
 
 // #set enum(numbering: "a)")
 // + in figure shows the initial state after `new`, where the queue is empty.
@@ -825,10 +823,6 @@ with the transformation definitions in @table:cursor-operations and @table:extra
 // + shows the state after `extractMin()`.
 // + shows the state after `extractMin()`.
 // + shows the state after `extractMin()`. At this point the queue is empty again. At this point `min()` returns `None`, and `extractMin()` returns with an error.
-
-
-
-#pagebreak()
 
 == Example Execution
 
@@ -1217,9 +1211,9 @@ still maintaining the safety guarantees of Rust.
 
 In future work, we plan to implement and evaluate the proposed design in a Stack Resource Policy
 @128747 based @EDF scheduler. For the implementation, we intend to characterize the blocking factors
-and overhead, and establish overhead aware response time and scheduling test. Furthermore, we aim to
-explore hardware-assisted interrupt time-stamping and study the practical effects of obtained jitter
-minimization to scheduling performance.
+and overhead, and establish overhead aware response time analysis and scheduling tests. Furthermore,
+we aim to explore hardware-assisted interrupt time-stamping and study the practical effects of
+obtained jitter minimization on scheduling performance.
 
 Regarding the `critical-section` crate extension, we plan to propose the design to the Rust embedded
 working group, and jointly work towards its inclusion in the foundational crate.
