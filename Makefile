@@ -2,8 +2,8 @@ TYPST = typst
 DRAWIO = drawio
 SRC_DIR = doc
 BUILD_DIR = build
-DIAGRAMS_DIR = diagrams
-BUILD_DIAGRAMS_DIR = $(BUILD_DIR)/diagrams
+DIAGRAMS_DIR = figs
+BUILD_DIAGRAMS_DIR = $(BUILD_DIR)/figs
 
 # Find all .drawio files
 DIAGRAM_FILES := $(wildcard $(DIAGRAMS_DIR)/*.drawio)
