@@ -48,16 +48,16 @@
   The choice of queue implementation introduces tradeoffs with respect to software overhead, memory
   usage and blocking times. A key consideration is thread-safety and memory safety. In this paper,
   we propose an unsorted, thread-safe in-place priority queue allowing an $cal(O)(1)$ upper bound on
-  inferred blocking, as well as $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin`
-  operations. The queue is implemented as a linked list backed by a fixed-size array, and can be
-  allocated either statically, on the heap or on the stack. Potential applications include real-time
-  scheduling, event management, and graph algorithms where predictable and minimal blocking times
-  are paramount. For the implementation we leverage on the strong typing and memory safety
-  guarantees of the Rust systems level programming language. In order to obtain constant upper bound
-  blocking we propose an extension to the `critical-section` crate, introducing structured and well
-  defined preemption points and preemption regions within a critical section. Finally, we define a
-  set of key invariants capturing sought properties and soundness of the priority queue, from which
-  we argue the safety of the implementation.
+  inferred blocking, as well as $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin` operations. The
+  queue is implemented as a linked list backed by a fixed-size array, and can be allocated either
+  statically, on the heap or on the stack. Potential applications include real-time scheduling,
+  event management, and graph algorithms where predictable and minimal blocking times are paramount.
+  For the implementation we leverage on the strong typing and memory safety guarantees of the Rust
+  systems level programming language. In order to obtain constant upper bound blocking we propose an
+  extension to the `critical-section` crate, introducing structured and well defined preemption
+  points and preemption regions within a critical section. Finally, we define a set of key
+  invariants capturing sought properties and soundness of the priority queue, from which we argue
+  the safety of the implementation.
 ]
 
 #show: para-lipics.with(
@@ -134,13 +134,20 @@ and memory safety guarantees. Our approach is based on mutual-exclusion implemen
 interrupt-free lock-regions, thus suitable for deployment on single-core @COTS hardware.
 
 Key contributions of this work include:
-- An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin` operations.
+- An in-place, array-based linked list priority queue implementation, with $cal(O)(1)$ `insert` and
+  $cal(O)(N)$ `extractMin` operations.
 - An extension to the embedded Rust foundational `critical-section` crate#footnote[Rust terminology
-    for library], introducing structured preemption points and preemption regions within a critical section. For our proposal, we present safety argumentation and show compliance to rust ownership and borrowing rules.
-- A set of key invariants capturing sought properties and soundness of the priority queue, from which we argue the safety and soundness of the implementation.
-- Leveraging the proposed preemption point abstraction we show that worst case blocking time has a constant upper bound of $cal(O)(1)$, thus suitable for hard real-time scheduling applications.
-- By introducing a work-stealing mechanism, the amortized complexity can maintain the $cal(O)(N)$ `extractMin`, even in the current case.
-- Applied to an @EDF scheduler, the proposed design allows for minimal task dispatch latency, free of priority inversion, and with minimal jitter.
+    for library], introducing structured preemption points and preemption regions within a critical
+  section. For our proposal, we present safety argumentation and show compliance to rust ownership
+  and borrowing rules.
+- A set of key invariants capturing sought properties and soundness of the priority queue, from
+  which we argue the safety and soundness of the implementation.
+- Leveraging the proposed preemption point abstraction we show that worst case blocking time has a
+  constant upper bound of $cal(O)(1)$, thus suitable for hard real-time scheduling applications.
+- By introducing a work-stealing mechanism, the amortized complexity can maintain the $cal(O)(N)$
+  `extractMin`, even in the current case.
+- Applied to an @EDF scheduler, the proposed design allows for minimal task dispatch latency, free
+  of priority inversion, and with minimal jitter.
 
 = Background and Motivation -- @EDF:lo Scheduling
 <sec:background>
@@ -149,11 +156,25 @@ priority queues, elements are allowed to be extracted under some given ordering.
 implementations include binary heaps, binomial heaps, Fibonacci heaps, and pairing heaps.
 
 
-We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt handlers:
-+ They are first signalled to an arrival handler $A_i$. This handler captures the task's arrival timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or enqueue the task in a priority queue using `insert` for later retrieval and execution (@fig:arrival-handler and @fig:interrupt-handler top).
+We consider an @EDF kernel where arriving tasks $J_i$ are each associated with two interrupt
+handlers:
++ They are first signalled to an arrival handler $A_i$. This handler captures the task's arrival
+  timestamp `TS`, and may then either dispatch the task to run on a lower priority handler, or
+  enqueue the task in a priority queue using `insert` for later retrieval and execution
+  (@fig:arrival-handler and @fig:interrupt-handler top).
 
-+ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when the dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch handler makes a scheduling decision. If the job with the earliest absolute deadline in the queue, extracted with `extractMin`, has an absolute deadline shorter than the next task to execute's deadline, then that job is dispatched (@fig:interrupt-handler bottom); otherwise the extracted job is enqueued again. The operation can be optimized by implementing an additional method `min` with $cal(O)(1)$ that returns the earliet absolute deadline of enqueued jobs, but the implementation details are outside the scope of this paper.
-+ The priority of arrival and dispatch handlers is determined according to relative task deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize time-stamp jitter.
++ As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when the
+  dispatch handler is executed by the interrupt controller. When the tasks completes, the dispatch
+  handler makes a scheduling decision. If the job with the earliest absolute deadline in the queue,
+  extracted with `extractMin`, has an absolute deadline shorter than the next task to execute's
+  deadline, then that job is dispatched (@fig:interrupt-handler bottom); otherwise the extracted job
+  is enqueued again. The operation can be optimized by implementing an additional method `min` with
+  $cal(O)(1)$ that returns the earliet absolute deadline of enqueued jobs, but the implementation
+  details are outside the scope of this paper.
++ The priority of arrival and dispatch handlers is determined according to relative task
+  deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher
+  priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize
+  time-stamp jitter.
 
 Therefore, for the purpose of @EDF scheduling, we seek a priority queue implementation with the
 following properties:<sec:requirements>
@@ -558,7 +579,14 @@ nodes.
 - _insert_: Insertion is unsorted: elements are appended at the tail of the list. Node updates are
   protected by a critical section, which is implemented by disabling interrupts. This critical
   section is of constant time $cal(O)(1)$, as it only involves mutating a single node.
-- _extractMin_: Extraction of the minimum element is performed by traversing the list from head to tail to find the minimum element, and then removing it from the list. This operation has a time complexity of $cal(O)(N)$, where $N$ is the number of elements in the queue. However, since all insertions are performed exclusively and atomically--via a critical section--at the queue tail, inspecting all nodes guarantees that the minimum element of the list is found, since no node can be inserted at a location already traversed by the reader pointer. Moreover, critical sections can be limited to the length of inspecting or mutating a single node--and are thus constant-time ($cal(O)(1)$).
+- _extractMin_: Extraction of the minimum element is performed by traversing the list from head to
+  tail to find the minimum element, and then removing it from the list. This operation has a time
+  complexity of $cal(O)(N)$, where $N$ is the number of elements in the queue. However, since all
+  insertions are performed exclusively and atomically--via a critical section--at the queue tail,
+  inspecting all nodes guarantees that the minimum element of the list is found, since no node can
+  be inserted at a location already traversed by the reader pointer. Moreover, critical sections can
+  be limited to the length of inspecting or mutating a single node--and are thus constant-time
+  ($cal(O)(1)$).
 
 The implementation is thread-safe, thus allows for concurrent access from multiple execution
 contexts (the arrival and dispatch handlers, for the @EDF case under study).
@@ -585,11 +613,28 @@ of preemptive execution among dispatch handlers.
 
 == Formalization of the algorithm
 
-In the following, we present a formalization of the data structure and the algorithm, and later, show that the presented implementation matches the formalization. Using the formalization, we define properties of the data structure and argue they are invariant under the described operations. The invariant properties guarantee the algorithm's correctness under the preemptive executiong environment, and ensure no undefined behavior occurs even in the `unsafe` section of the Rust-based implementation.
+In the following, we present a formalization of the data structure and the algorithm, and later,
+show that the presented implementation matches the formalization. Using the formalization, we define
+properties of the data structure and argue they are invariant under the described operations. The
+invariant properties guarantee the algorithm's correctness under the preemptive executiong
+environment, and ensure no undefined behavior occurs even in the `unsafe` section of the Rust-based
+implementation.
 
-Let $N$ be a finite set of nodes, and $H, F, T in N union {emptyset}$ denote the nodes specified by the head pointer, the free pointer, and the tail pointer, respectively. Emptyset $emptyset$ here represents a pointer not pointing to anything. Let $V$ be a set of values representing the possible values associated to the nodes. An implentation agnostic functions descibes the linked structure of nodes: $italic("next"): N -> N union {emptyset}$ is a function defining the next node for each node. Another implementation agnostic function desribes the values associated to some nodes: $italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes. Not all nodes have an associated value (they might be uninitilized), meaning the domain of $italic("data")$ is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
+Let $N$ be a finite set of nodes, and $H, F, T in N union {emptyset}$ denote the nodes specified by
+the head pointer, the free pointer, and the tail pointer, respectively. Emptyset $emptyset$ here
+represents a pointer not pointing to anything. Let $V$ be a set of values representing the possible
+values associated to the nodes. An implentation agnostic functions descibes the linked structure of
+nodes: $italic("next"): N -> N union {emptyset}$ is a function defining the next node for each node.
+Another implementation agnostic function desribes the values associated to some nodes:
+$italic("data"): N harpoon.rt V$ is a function defining the value of the initialized nodes. Not all
+nodes have an associated value (they might be uninitilized), meaning the domain of $italic("data")$
+is not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
 
-Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$ be the cursor used by _extractMin_. If the cursor is not empty, the $C$, and $italic(min)$,  $italic("prev")$ are the node specified the reader pointer, the minimum value encountered, and the node specified by the _previous pointer_, respectively.
+Finally, let
+$italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$
+be the cursor used by _extractMin_. If the cursor is not empty, the $C$, and $italic(min)$,
+$italic("prev")$ are the node specified the reader pointer, the minimum value encountered, and the
+node specified by the _previous pointer_, respectively.
 
 #{
   show table.cell: set text(size: 9pt)
@@ -633,7 +678,8 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
           $]]
       ],
     ),
-    caption: [Formalization of the atomic _insert_ $v$ operation, i.e., the _insert_ $v$ transformation.],
+    caption: [Formalization of the atomic _insert_ $v$ operation, i.e., the _insert_ $v$
+      transformation.],
   )
   [#fig <table:insert>]
 }
@@ -671,16 +717,17 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
         *Assuming* $C != T$
 
         #math.equation(block: true, numbering: none)[$
-          & "Cur'"          & = & (italic("next")(C), min(min, italic("data")(italic("next")(C))), italic("prev"')), \
+          & "Cur'" & = & (italic("next")(C), min(min, italic("data")(italic("next")(C))), italic("prev"')), \
           & "where" \
           & italic("prev"') & = & cases(
-                                    italic("prev") & "if" min & = & min(min\, italic("data")(italic("next")(C))),
-                                    C & "if" italic("data")(italic("next")(C)) & = & min(min\, italic("data")(italic("next")(C)))
-                                  )
+            italic("prev") & "if" min & = & min(min\, italic("data")(italic("next")(C))),
+            C & "if" italic("data")(italic("next")(C)) & = & min(min\, italic("data")(italic("next")(C)))
+          )
         $]
       ],
     ),
-    caption: [Formalization of the atomic operation of the cursor traversing the list, i.e., the _forwardCursor_ transformation.],
+    caption: [Formalization of the atomic operation of the cursor traversing the list, i.e., the
+      _forwardCursor_ transformation.],
   )
   [#fig <table:cursor-operations>]
 }
@@ -692,15 +739,17 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
     table(
       columns: 2,
       gutter: 2pt,
-      stroke: (x, y) => if y == 2 or y == 1 { (top: (thickness: 0.5pt, paint: luma(200)))} + if x>0 { (left: (thickness: 0.5pt, paint: luma(200)))},
+      stroke: (x, y) => (
+        if y == 2 or y == 1 { (top: (thickness: 0.5pt, paint: luma(200))) }
+          + if x > 0 { (left: (thickness: 0.5pt, paint: luma(200))) }
+      ),
       table.cell(colspan: 2)[
         #text(weight: "regular")[Assume] $C = T$
       ],
       table.cell(colspan: 2)[
         *Case 0:* $H = emptyset$
 
-        State does not change,
-        _extractMin_ returns $emptyset$
+        State does not change, _extractMin_ returns $emptyset$
       ],
       [
         *Case 1:* $italic("prev") = emptyset$
@@ -746,51 +795,76 @@ Finally, let $italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|)
         Return $italic(min)$
       ],
     ),
-    caption: [Formalization of the atomic operation of extracting the found min, i.e., the _extractFoundMin_ transformation.],
+    caption: [Formalization of the atomic operation of extracting the found min, i.e., the
+      _extractFoundMin_ transformation.],
   )
   [#fig <table:extract-min>]
 }
 
-The data structure is defined as a 6-tuple $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, and the operations _insert_ and _extractMin_ as transformations $(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$ of that 6-tuple. Formally, three different transformations are defined: _insert_ (@table:insert), _forwardCursor_ (@table:cursor-operations), and _extractFoundMin_ (@table:extract-min). The _extractMin_ operation consists of repeated application of _forwardCursor_ until $C=T$, followed by an instant application of _extractFoundMin_. Each step of _forwardCursor_ can be intercepted with an _insert_ operation.
+The data structure is defined as a 6-tuple
+$(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, and the operations _insert_ and
+_extractMin_ as transformations
+$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$
+of that 6-tuple. Formally, three different transformations are defined: _insert_ (@table:insert),
+_forwardCursor_ (@table:cursor-operations), and _extractFoundMin_ (@table:extract-min). The
+_extractMin_ operation consists of repeated application of _forwardCursor_ until $C=T$, followed by
+an instant application of _extractFoundMin_. Each step of _forwardCursor_ can be intercepted with an
+_insert_ operation.
 
-To define the initial state of the data structure, that is the 6-tuple $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, we first denote the following:
+To define the initial state of the data structure, that is the 6-tuple
+$(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, we first denote the following:
 
 For $X in N$, denote
 $
   {X ->^* } = {n in N mid(|) exists space k in NN_0 : italic("next")^k (X) = n },
 $
-i.e., ${X ->^* }$ is the set of nodes reachable from $X$ by applying $italic("next")$ zero or more times, and
+i.e., ${X ->^* }$ is the set of nodes reachable from $X$ by applying $italic("next")$ zero or more
+times, and
 $
   {X ->^+ } = {n in N mid(|) exists space k in NN_+ : italic("next")^k (X) = n },
 $
-i.e., ${X ->^+ }$ is the set of nodes reachable from $X$ by applying $italic("next")$ one or more times. If $X$ is empty, both notations equal the empty set $emptyset$. Additionally, we define a predicate $"List"(X)$ that says node $X$ starts a linked list without any loops, i.e,
+i.e., ${X ->^+ }$ is the set of nodes reachable from $X$ by applying $italic("next")$ one or more
+times. If $X$ is empty, both notations equal the empty set $emptyset$. Additionally, we define a
+predicate $"List"(X)$ that says node $X$ starts a linked list without any loops, i.e,
 $
   "List"(X) = forall n in {x ->^*}: not(n ->^+ n).
 $
 
-The data structure is initialized as follows: $H, T, italic("Cur") = emptyset$, $T in N$, and the $italic("next")$ function is initialized in any way to satisfy $"List"(F)$, ${F ->^*} = N$. The list-order of nodes does not matter, as long as the list starting from $F$ contains all the nodes. The function $italic("data")$ at the intitial state is arbitrary.
+The data structure is initialized as follows: $H, T, italic("Cur") = emptyset$, $T in N$, and the
+$italic("next")$ function is initialized in any way to satisfy $"List"(F)$, ${F ->^*} = N$. The
+list-order of nodes does not matter, as long as the list starting from $F$ contains all the nodes.
+The function $italic("data")$ at the intitial state is arbitrary.
 
 === Properties of the data structure<sec:safety_invariants>
 
 The invariants describing the data structure are:
 
-#math.equation(supplement: [Invariant],
+#math.equation(
+  supplement: [Invariant],
   block: true,
   $N = {H ->^*} union {F ->^*} "and" {H ->^*} inter {F ->^*} = emptyset$,
 )<eq:nodes>
 
-#math.equation(supplement: [Invariant], block: true, $forall n in \{H ->^*\}: n in "dom"(italic("data"))$)<eq:initialized>
+#math.equation(
+  supplement: [Invariant],
+  block: true,
+  $forall n in \{H ->^*\}: n in "dom"(italic("data"))$,
+)<eq:initialized>
 
-#math.equation(supplement: [Invariant],
-  block: true, $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$
+#math.equation(
+  supplement: [Invariant],
+  block: true,
+  $forall n in \{H ->^*\}, {F ->^*}: n in.not {n ->^+}$,
 )<eq:no-loops>
 
-#math.equation(supplement: [Invariant],
+#math.equation(
+  supplement: [Invariant],
   block: true,
   $T != emptyset => T in {H ->^*} "and" italic("next")(T) = emptyset$,
 )<eq:tail_in_head>
 
-#math.equation(supplement: [Invariant],
+#math.equation(
+  supplement: [Invariant],
   block: true,
   $italic("Cur") "is not empty" => cases(
     C in {H -> *},
@@ -820,17 +894,29 @@ points to the *last* node in the list reachable from the head pointer $H$. This 
 for ensuring that we can safely assume that appended nodes are inserted at the tail of the list
 reachable from $H$.
 
-Finally, @eq:cursor stipulates that the cursor is either empty, or it the associated data has three qualities:
+Finally, @eq:cursor stipulates that the cursor is either empty, or it the associated data has three
+qualities:
 - the reader pointer points at some node reachable from the head pointer,
-- the minimum value encountered is indeed the minimum value among nodes preceeding and including the last inspected node, and
-- the _previous pointer_ points at the node before the node containing the minimum value encountered, or is empty if the minimum value is found at the head of the list.
-@eq:cursor is especially important to ensure the _extractMin_ operation can be safely preempted, and it will still find the minimum node when the cursor reaches the tail, i.e., when $C = T$.
+- the minimum value encountered is indeed the minimum value among nodes preceeding and including the
+  last inspected node, and
+- the _previous pointer_ points at the node before the node containing the minimum value
+  encountered, or is empty if the minimum value is found at the head of the list.
+@eq:cursor is especially important to ensure the _extractMin_ operation can be safely preempted, and
+it will still find the minimum node when the cursor reaches the tail, i.e., when $C = T$.
 
-The invariants hold for the initial state of the data structure, and it can be shown that, assuming they hold for an initial $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, they also hold after each transformation $(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$---either _insert_, _forwardCursor_ or _extractFoundMin_ as defined in @table:insert, @table:cursor-operations and @table:extract-min.
+The invariants hold for the initial state of the data structure, and it can be shown that, assuming
+they hold for an initial $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, they also hold
+after each transformation
+$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$---either
+_insert_, _forwardCursor_ or _extractFoundMin_ as defined in @table:insert, @table:cursor-operations
+and @table:extract-min.
 
 == Data Structure and API
 
-For the implementation of the API operations, we have implemented allocation and insertion at index operations as private helper functions, assuming and ensuring invariants  @eq:nodes, @eq:initialized, @eq:no-loops, @eq:tail_in_head and @eq:cursor. The public API operations are implemented on top of these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
+For the implementation of the API operations, we have implemented allocation and insertion at index
+operations as private helper functions, assuming and ensuring invariants @eq:nodes, @eq:initialized,
+@eq:no-loops, @eq:tail_in_head and @eq:cursor. The public API operations are implemented on top of
+these helper functions, and we argue that they uphold the safety invariants in a concurrent setting.
 
 === Data Structure
 
@@ -869,7 +955,12 @@ next node (`None` variant), thus avoiding the need for sentinel values and their
   value and the next pointer. However, we opted for the current design for its simplicity and
   clarity in illustrating the key concepts.]
 
-Reflecting the implementation to the formalization in @sec:safety_invariants ---the set nodes $N$ in the formalization correspond to indices $#text(`0`), ...,#text(`N-1`)$; $H$, $T$ and $F$ correspond to `head`, `tail` and `free`, respectively; $italic("next")(i), i in #text(`N`)$ corresponds to `next[i]`; $italic("data")(i), i in #text(`N`)$ corresponds to `data[i]`, and "empty" or $emptyset$ corresponds to `None`. Indices $#text(`i`) in #text(`N`)$ for which `data[i]` is uninitialized, do not belong in $"dom"(italic("data"))$.
+Reflecting the implementation to the formalization in @sec:safety_invariants ---the set nodes $N$ in
+the formalization correspond to indices $#text(`0`), ...,#text(`N-1`)$; $H$, $T$ and $F$ correspond
+to `head`, `tail` and `free`, respectively; $italic("next")(i), i in #text(`N`)$ corresponds to
+`next[i]`; $italic("data")(i), i in #text(`N`)$ corresponds to `data[i]`, and "empty" or $emptyset$
+corresponds to `None`. Indices $#text(`i`) in #text(`N`)$ for which `data[i]` is uninitialized, do
+not belong in $"dom"(italic("data"))$.
 
 === API: `const fn new() -> Self`<sec:new>
 
@@ -889,7 +980,10 @@ initialization is performed before `main` is executed, while in case of heap or 
 the queue is not accessible until the `new` function returns, thus there is no concurrent access to
 the queue during initialization.
 
-Reflecting the implementation to the formalization, setting `head`, `tail` and `cursor` to `None` corresponds to setting $H$, $T$ and $italic("Cur")$ to $emptyset$. The `free` pointer is set to $0$, and the `next` array is initialized to form a list including all the nodes, corresponding to how $italic("next")$ and $T$ are initialized in the formalization.
+Reflecting the implementation to the formalization, setting `head`, `tail` and `cursor` to `None`
+corresponds to setting $H$, $T$ and $italic("Cur")$ to $emptyset$. The `free` pointer is set to $0$,
+and the `next` array is initialized to form a list including all the nodes, corresponding to how
+$italic("next")$ and $T$ are initialized in the formalization.
 
 === API: `insert(&mut self, value: T) -> Result<(), ()>`<sec:insert>
 
@@ -911,7 +1005,8 @@ remains initialized, thus @eq:initialized holds.
 Manipulations of the priority queue in this API are protected by a (global) critical section, thus
 safe. All operations are constant time $cal(O)(1)$.
 
-Reflecting the implementation to the formalization, the `insert` method is an atomic operation corresponding to the _insert_ transformation as defined in @table:insert.
+Reflecting the implementation to the formalization, the `insert` method is an atomic operation
+corresponding to the _insert_ transformation as defined in @table:insert.
 
 
 #figure(
@@ -984,7 +1079,7 @@ bounded and constant time $cal(O)(1)$.
   placement: none,
   ```rust
   pub fn extractMin(&mut self, mock_test: MockTest) -> Option<T> {
-      CsSingleCore::with(|mut cs| {
+      critical_section::with(|mut cs| {
           // steal or create new cursor (omitted for brevity)
 
           // search minimal element in loop
@@ -1002,7 +1097,7 @@ bounded and constant time $cal(O)(1)$.
                   ..self.cursor.unwrap()
               });
 
-              CsSingleCore::preemption_point(&_cs);
+              critical_section::preemption_point(&_cs);
 
               if let Some(cursor) = self.cursor {
                   current_index = cursor.current_index;
@@ -1019,7 +1114,9 @@ bounded and constant time $cal(O)(1)$.
   caption: [Priority Queue `extractMin` operation.],
 ) <fig:pq_extractMin>
 
-Reflecting the implementation to the foralization, the `extractMin` method is devided to critical sections corresponding the _forwardCursor_ and _extractFoundMin_ transformations and is compliant with the transformation definitions in @table:cursor-operations and @table:extract-min.
+Reflecting the implementation to the foralization, the `extractMin` method is devided to critical
+sections corresponding the _forwardCursor_ and _extractFoundMin_ transformations and is compliant
+with the transformation definitions in @table:cursor-operations and @table:extract-min.
 
 
 
