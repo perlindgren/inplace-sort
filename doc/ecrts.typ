@@ -551,7 +551,7 @@ The invariants describing the data structure are:
 #math.equation(
   supplement: [Invariant],
   block: true,
-  $"List"(H) "and" "List"(F)$,
+  $H != emptyset => "List"(H) "and" F != emptyset => "List"(F)$,
 )<eq:no-loops>
 
 #math.equation(
@@ -583,7 +583,7 @@ before they can be safely read. By upholding @eq:initialized, it is sufficient t
 are always read through the head pointer to ensure that we satisfy Rust's safety guarantees and
 avoid @UB.
 
-@eq:no-loops states that there are no loops in the lists starting at $T$ and $F$. This is essential
+@eq:no-loops states that there are no loops in the lists starting at $H$ and $F$. This is essential
 to guarantee $cal(O)(n)$ for the _extractMin_ operation.
 
 Assuming @eq:no-loops, @eq:tail_in_head stipulates that if the tail pointer $T$is not empty, it
