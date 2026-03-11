@@ -10,6 +10,7 @@ use std::fmt::Debug;
 pub struct Cursor<T> {
     min_index: Option<u16>, // None indicates that index refers to head
     min_value: T,
+    min2_value: Option<T>,
     current_index: u16,
 }
 #[derive(Debug)]
@@ -20,6 +21,7 @@ pub struct PriorityQueue<const N: usize, T: Debug + Copy + Clone + PartialOrd> {
     tail: Option<u16>,
     free: Option<u16>,
     cursor: Option<Cursor<T>>, // should be unsafe cell
+    min: Option<i32>,
 }
 
 impl<const N: usize, T: Debug + Copy + Clone + PartialOrd> fmt::Display for PriorityQueue<N, T> {
@@ -93,6 +95,7 @@ impl<const N: usize> PriorityQueue<N, i32> {
             tail: None,
             free: Some(0),
             cursor: None,
+            min: None,
         };
 
         let mut i = 0;
@@ -110,10 +113,17 @@ impl<const N: usize> PriorityQueue<N, i32> {
     }
 
     #[inline(always)]
+    pub fn getMin(&self) -> Option<i32> {
+        self.min
+    }
+
+    #[inline(always)]
     pub fn extractMin(&mut self, mock_test: MockTest) -> Option<i32> {
         CsSingleCore::with(|mut cs| {
             let head_index = self.head?;
 
+            // Initialize cursor, if it's untilialized.
+            // Let current_index be the current index.
             let mut current_index = {
                 if let Some(cursor) = self.cursor {
                     println!(
@@ -124,6 +134,7 @@ impl<const N: usize> PriorityQueue<N, i32> {
                 } else {
                     println!("extractMin: initialize cursor at head index {}", head_index);
                     self.cursor = Some(Cursor {
+                        min2_value: None,
                         min_value: unsafe { self.data[head_index as usize].assume_init() },
                         min_index: None,
                         current_index: head_index,
@@ -134,25 +145,50 @@ impl<const N: usize> PriorityQueue<N, i32> {
 
             println!("extractMin: cursor {:?}", self.cursor);
 
+            // While there is a next node, forward cursor.
             while let Some(next_index) = self.next[current_index as usize] {
+                // Let next_value be the value of the next node.
                 let next_value = unsafe { self.data[next_index as usize].assume_init() };
                 println!(
                     "extractMin: -- cursor {:?},  current_index {}, next_index {}, next_value {:?}",
                     self.cursor, current_index, next_index, next_value
                 );
 
-                if next_value < self.cursor.unwrap().min_value {
+                // Compare next_value to min
+                if next_value <= self.cursor.unwrap().min_value {
                     println!(
                         "update cursor to next_index {}, next_value {:?}",
                         next_index, next_value
                     );
+                    // The old minimum value becomes the second smallest value.
+                    // Min_index becomes the current index; the index of previous node.
                     self.cursor = Some(Cursor {
+                        min2_value: Some(self.cursor.unwrap().min_value),
                         min_value: next_value,
                         min_index: Some(current_index),
                         current_index: next_index,
                     });
                 }
-
+                // Update min2_value
+                if let Some(min2_value) = self.cursor.unwrap().min2_value {
+                    // If next_value is not smaller than min_value
+                    // but is smaller than the second smallest value,
+                    // it becomes the new second smallest value.
+                    if next_value > self.cursor.unwrap().min_value && next_value < min2_value {
+                        self.cursor.replace(Cursor {
+                            min2_value: Some(next_value),
+                            ..self.cursor.unwrap()
+                        });
+                    }
+                } else if next_value > self.cursor.unwrap().min_value {
+                    // If min2_value was not set, but next_value was not smaller
+                    // than the old min, set min2_value to next_value.
+                    self.cursor.replace(Cursor {
+                        min2_value: Some(next_value),
+                        ..self.cursor.unwrap()
+                    });
+                }
+                // Forward index in all cases
                 self.cursor.replace(Cursor {
                     current_index: next_index,
                     ..self.cursor.unwrap()
@@ -233,6 +269,7 @@ impl<const N: usize> PriorityQueue<N, i32> {
                         self.tail = cursor.min_index;
                     }
                 }
+                self.min = self.cursor.unwrap().min2_value;
                 self.cursor = None;
                 Some(cursor.min_value)
             } else {
@@ -255,6 +292,14 @@ impl<const N: usize> PriorityQueue<N, i32> {
                 self.head = Some(new_index);
             }
             self.tail = Some(new_index); // if the queue was empty, set tail to new node
+
+            if let Some(min) = self.min {
+                if value < min {
+                    self.min = Some(value);
+                }
+            } else {
+                self.min = Some(value);
+            }
 
             Ok(())
         })
@@ -448,6 +493,37 @@ mod tests {
         assert_eq!(pq.extractMin(MockTest::None), Some(1337));
         assert_eq!(pq.extractMin(MockTest::None), Some(1337));
         println!("after extractMin: {}", pq);
+    }
+
+    #[test]
+    fn test_get_min() {
+        let mut pq = PriorityQueue::<9, i32>::new();
+        println!("after init: {}", pq);
+
+        assert_eq!(pq.getMin(), None);
+        let _ = pq.insert(42);
+        assert_eq!(pq.getMin(), Some(42));
+        let _ = pq.insert(1337);
+        assert_eq!(pq.getMin(), Some(42));
+        let _ = pq.insert(38);
+        assert_eq!(pq.getMin(), Some(38));
+        let _ = pq.insert(42);
+        let _ = pq.insert(1337);
+        let _ = pq.insert(38);
+
+        assert_eq!(pq.getMin(), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
+        assert_eq!(pq.getMin(), Some(38));
+        assert_eq!(pq.extractMin(MockTest::None), Some(38));
+        assert_eq!(pq.getMin(), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        assert_eq!(pq.getMin(), Some(42));
+        assert_eq!(pq.extractMin(MockTest::None), Some(42));
+        assert_eq!(pq.getMin(), Some(1337));
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
+        assert_eq!(pq.getMin(), Some(1337));
+        assert_eq!(pq.extractMin(MockTest::None), Some(1337));
+        assert_eq!(pq.getMin(), None);
     }
 
     #[test]

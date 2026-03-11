@@ -435,7 +435,7 @@ encountered), and the node specified by the _previous pointer_, respectively.
           & "where" \
           & italic("min2")' & = & cases(
             italic("min") & "if" italic("min")' = italic("data")(italic("next")(C)),
-            italic("data")(italic("next")(C)) & "if" italic("min2") > italic("data")(italic("next")(C)) > italic("min"),
+            italic("data")(italic("next")(C)) & "if" italic("min2") = emptyset "or" italic("min2") > italic("data")(italic("next")(C)) > italic("min"),
             italic("min2") & "otherwise"
           ) \
           & italic("prev"') & = & cases(
@@ -642,7 +642,7 @@ from $H$. This invariant ensures the operation _getMin_ is always $cal(O)(1)$.
 The invariants hold for the initial state of the data structure, and it can be shown that, assuming
 they hold for an initial $(H, T, F, italic("next"), italic("prev"), italic("Min"), italic("Cur"))$,
 they also hold after each transformation
-$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Min")', italic("Cur")')$---either
+$(H, T, F, italic("next"), italic("prev"), italic("Min"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Min")', italic("Cur")')$---either
 _insert_, _forwardCursor_ or _extractFoundMin_ as defined in @table:insert, @table:cursor-operations
 and @table:extract-min.
 
