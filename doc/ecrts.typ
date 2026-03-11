@@ -360,13 +360,14 @@ encountered), and the node specified by the _previous pointer_, respectively.
       gutter: 2pt,
       [
         #math.equation(block: true, numbering: none)[$
-          & T'                 & = & F \
-          & F'                 & = & italic("next")(F) \
-          & italic("data")'(x) & = & cases(
-                                       italic("data")(x) & "if" x != F,
-                                       v & "if" x = F
-                                     ) \
-          & italic("Cur"')     & = & italic("Cur")
+          & T'                     & = & F \
+          & F'                     & = & italic("next")(F) \
+          & "Dom"(italic("data")') & = & "Dom"(italic("data")) union { F } \
+          & italic("data")'(x)     & = & cases(
+                                           italic("data")(x) & "if" x != F,
+                                           v & "if" x = F
+                                         ) \
+          & italic("Cur"')         & = & italic("Cur")
         $]
       ],
       [
