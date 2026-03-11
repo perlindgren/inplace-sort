@@ -135,7 +135,8 @@ interrupt-free lock-regions, thus suitable for deployment on single-core @COTS h
 
 Key contributions of this work include:
 - A formal desciption and an implementation of an in-place, array-based linked list priority queue
-  implementation, with $cal(O)(1)$ `insert` and $cal(O)(N)$ `extractMin` operations.
+  implementation, with $cal(O)(1)$ `insert`, $cal(O)(1)$ `getMin`, and $cal(O)(N)$ `extractMin`
+  operations.
 - An extension to the embedded Rust foundational `critical-section` crate#footnote[Rust terminology
     for library], introducing structured preemption points and preemption regions within a critical
   section. For our proposal, we present safety argumentation and show compliance to rust ownership
@@ -173,12 +174,10 @@ handlers:
 
 + As tasks are dispatched on their dispatch handlers $D_i$, their payload is executed when the
   dispatch handler is executed by the interrupt controller. When a task completes, the dispatch
-  handler makes a scheduling decision. If the job with the earliest absolute deadline in the queue,
-  extracted with `extractMin`, has an absolute deadline shorter than the next task to execute's
-  deadline, then that job is dispatched (@fig:interrupt-handler bottom); otherwise the extracted job
-  is enqueued again. The operation can be optimized by implementing an additional method `min` with
-  $cal(O)(1)$ that returns the earliest absolute deadline of enqueued jobs, but the implementation
-  details are outside the scope of this paper.
+  handler makes a scheduling decision. If the deadline of the job with the earliest absolute
+  deadline in the queue, retrieved with `getMin`, has an absolute deadline shorter than the next
+  task to execute's deadline, then that job is extracted with `extractMin` and dispatched
+  (@fig:interrupt-handler bottom).
 + The priority of arrival and dispatch handlers is determined according to relative task
   deadlines,where the group of arrival handlers (@fig:interrupt-handler top) are assigned higher
   priority than the group of dispatch handlers (@fig:interrupt-handler bottom), to minimize
@@ -342,11 +341,13 @@ nodes: $italic("data"): N harpoon.rt V$ is a function defining the value of the 
 Not all nodes have an associated value (they might be uninitialized), meaning the domain of
 $italic("data")$ does not necessarily contain all of $N$, as implied by the $harpoon.rt$ symbol.
 
-Finally, let
-$italic("Cur") in {emptyset} union {(C, min, italic("prev")) mid(|) C in U, italic(min) in V, italic("prev") in {emptyset} union U,}$
-be the cursor used by _extractMin_. If the cursor is not empty, then $C$, $italic(min)$, and
-$italic("prev")$ are the node specified by the reader pointer, the minimum value encountered, and
-the node specified by the _previous pointer_, respectively.
+Let $italic("Min") in {emptyset} union N$ be a variable to track the smallest value in the list, and
+finally, let
+$italic("Cur") in {emptyset} union {(C, italic(min), italic("min2"), italic("prev")) mid(|) C in N, italic(min) in V, italic("min2") in {emptyset} union V, italic("prev") in {emptyset} union N,}$
+be the cursor used by _extractMin_. If the cursor is not empty, then $C$, $italic(min)$,
+$italic("min2")$ and $italic("prev")$ are the node specified by the reader pointer, the minimum
+value encountered, the second smallest value encountered (or empty, if only one value is
+encountered), and the node specified by the _previous pointer_, respectively.
 
 #{
   show table.cell: set text(size: 9pt)
@@ -371,23 +372,26 @@ the node specified by the _previous pointer_, respectively.
       [
         #box[Case 1: $H = emptyset$:
           #math.equation(block: true, numbering: none)[$
-            & H'         & = & F \
-            & "next'"(x) & = & cases(
-                                 emptyset & "if" x = F,
-                                 italic("next")(x) & "if" x != F
-                               )
+            & H'                 & = & F \
+            & "next'"(x)         & = & cases(
+                                         emptyset & "if" x = F,
+                                         italic("next")(x) & "if" x != F
+                                       ) \
+            & italic("Min")' = x
           $]]
       ],
       [
         #box[
           Case 2: $H != emptyset$:
           #math.equation(block: true, numbering: none)[$
-            & H'         & = & H \
-            & "next'"(x) & = & cases(
-                                 F & "if" x = T,
-                                 emptyset & "if" x = F,
-                                 italic("next")(x) & "otherwise"
-                               )
+            & H'             & = & H \
+            & "next'"(x)     & = & cases(
+                                     F & "if" x = T,
+                                     emptyset & "if" x = F,
+                                     italic("next")(x) & "otherwise"
+                                   ) \
+            \
+            & italic("Min")' & = & min(italic("Min"), x)
           $]]
       ],
     ),
@@ -408,27 +412,32 @@ the node specified by the _previous pointer_, respectively.
         Case 1: $"Cur" = emptyset$
       ],
       [
-        *Case 1a:* $H = emptyset$
+        *Case 1a:* $H != emptyset$
 
         #math.equation(block: true, numbering: none)[$italic("Cur"') =
-        (H, emptyset, italic("data")(H))$]
+        (H, italic("data")(H), emptyset, emptyset)$]
       ],
       [
-        *Case 1b:* $H != emptyset$
+        *Case 1b:* $H = emptyset$
 
         #math.equation(block: true, numbering: none)[$italic("Cur"') =
         emptyset$]
       ],
       table.cell(colspan: 2)[
         #v(0.5em)
-        *Case 2:* $italic("Cur") = (C, italic("min"), italic("prev"))$
+        *Case 2:* $italic("Cur") = (C, italic("min"), italic("min2"), italic("prev"))$
       ],
       table.cell(colspan: 2)[
         *Assuming* $C != T$
 
         #math.equation(block: true, numbering: none)[$
-          & "Cur'" & = & (italic("next")(C), min(italic(min), italic("data")(italic("next")(C))), italic("prev"')), \
+          & "Cur'" & = & (italic("next")(C), min(italic(min), italic("data")(italic("next")(C))), italic("min2")', italic("prev"')), \
           & "where" \
+          & italic("min2")' & = & cases(
+            italic("min") & "if" italic("min")' = italic("data")(italic("next")(C)),
+            italic("data")(italic("next")(C)) & "if" italic("min2") > italic("data")(italic("next")(C)) > italic("min"),
+            italic("min2") & "otherwise"
+          ) \
           & italic("prev"') & = & cases(
             italic("prev") & "if" italic(min) & = & min(italic(min)\, italic("data")(italic("next")(C))),
             C & "if" italic("data")(italic("next")(C)) & = & min(italic(min)\, italic("data")(italic("next")(C)))
@@ -473,7 +482,8 @@ the node specified by the _previous pointer_, respectively.
                                     italic("next")(x) & "if" x != H
                                   ) \
           & italic("data")' & = & italic("data") \
-          & italic("Cur")   & = & emptyset
+          & italic("Cur")   & = & emptyset \
+          & italic("Min")   & = & italic("min2")
         $]
 
       ],
@@ -493,7 +503,8 @@ the node specified by the _previous pointer_, respectively.
                                     italic("next")(x) & "otherwise"
                                   ) \
           & italic("data")' & = & italic("data") \
-          & italic("Cur")   & = & emptyset
+          & italic("Cur")   & = & emptyset \
+          & italic("Min")   & = & italic("min2")
         $]
       ],
       [
@@ -509,11 +520,11 @@ the node specified by the _previous pointer_, respectively.
   [#fig <table:extract-min>]
 }
 
-The data structure is defined as a 6-tuple
-$(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, and the operations _insert_ and
-_extractMin_ as transformations
-$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur")')$
-of that 6-tuple. Formally, three different transformations are defined: _insert_ (@table:insert),
+The data structure is defined as a 7-tuple
+$(H, T, F, italic("next"), italic("prev"), italic("Min"), italic("Cur"))$, and the operations
+_insert_ and _extractMin_ as transformations
+$(H, T, F, italic("next"), italic("prev"), italic("Min"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Min")', italic("Cur")')$
+of that 7-tuple. Formally, three different transformations are defined: _insert_ (@table:insert),
 _forwardCursor_ (@table:cursor-operations), and _extractFoundMin_ (@table:extract-min). The
 _extractMin_ operation consists of repeated application of _forwardCursor_ until $C=T$, followed by
 an instant application of _extractFoundMin_. Each step of _forwardCursor_ can be preempted by an
@@ -538,10 +549,10 @@ $
   "List"(X) = forall n in {x ->^*}: not(n ->^+ n).
 $
 
-The data structure is initialized as follows: $H, T, italic("Cur") = emptyset$, $T in N$, and the
-$italic("next")$ function is initialized in any way to satisfy $"List"(F)$, ${F ->^*} = N$. The
-list-order of nodes does not matter, as long as the list starting from $F$ contains all the nodes.
-The function $italic("data")$ at the intitial state is arbitrary.
+The data structure is initialized as follows: $H, T, italic("Min"), italic("Cur") = emptyset$,
+$T in N$, and the $italic("next")$ function is initialized in any way to satisfy $"List"(F)$,
+${F ->^*} = N$. The list-order of nodes does not matter, as long as the list starting from $F$
+contains all the nodes. The function $italic("data")$ at the intitial state is arbitrary.
 
 === Properties of the data structure<sec:safety_invariants>
 
@@ -574,12 +585,22 @@ The invariants describing the data structure are:
 #math.equation(
   supplement: [Invariant],
   block: true,
-  $italic("Cur") "is not empty" => cases(
-    C in {H -> *},
-    italic(min) = min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
-    italic("prev") = emptyset "and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
+  $italic("Cur") "is not empty" => \ cases(
+    C &in& {H -> *},
+    italic(min) &=& min(italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}),
+    italic("min2") &=& cases(
+      emptyset &"if" |{H ->^*} \\ {C ->^+}}}| = 1,
+      min({{italic("data")(n) mid(|) n in {H ->^*} \\ {C ->^+}}} \\ {{ italic("min") }}) &"otherwise"
+    ),
+    italic("prev") &=& emptyset "and" italic(min) = italic("data")(H)\, "or" italic("data")(italic("next")(italic("prev"))) = italic(min)
   )$,
 )<eq:cursor>
+
+#math.equation(
+  supplement: [Invariant],
+  block: true,
+  $italic("Min") = emptyset "iff" H = emptyset, "else" italic("Min") = min(italic("data")(n) mid(|) n in {H ->^* })$,
+)<eq:min>
 
 @eq:nodes stipulates that the set of initially allocated nodes is partitioned between the set of
 nodes reachable from the head pointer and the set of nodes reachable from the free pointer. As a
@@ -602,20 +623,26 @@ points to the *last* node in the list reachable from the head pointer $H$. This 
 for ensuring that we can safely assume that appended nodes are inserted at the tail of the list
 reachable from $H$.
 
-Finally, @eq:cursor stipulates that the cursor is either empty, or it the associated data has three
+@eq:cursor stipulates that the cursor is either empty, or it the associated data has three
 qualities:
 - the reader pointer points at some node reachable from the head pointer,
 - the minimum value encountered is indeed the minimum value among nodes preceeding and including the
-  last inspected node, and
+  last inspected node,
+- the second smallest value envountered is indeed the second smallest non-unique value envountered,
+  and
 - the _previous pointer_ points at the node before the node containing the minimum value
   encountered, or is empty if the minimum value is found at the head of the list.
 @eq:cursor is especially important to ensure the _extractMin_ operation can be safely preempted, and
 it will still find the minimum node when the cursor reaches the tail, i.e., when $C = T$.
 
+Finally, invariant @eq:min stipulates that $italic("Min")$ is empty only if $H$ is empty, and
+otherwise $italic("Min")$ is the smallest of the values associated to the nodes in the list starting
+from $H$. This invariant ensures the operation _getMin_ is always $cal(O)(1)$.
+
 The invariants hold for the initial state of the data structure, and it can be shown that, assuming
-they hold for an initial $(H, T, F, italic("next"), italic("prev"), italic("Cur"))$, they also hold
-after each transformation
-$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Cur"))'$---either
+they hold for an initial $(H, T, F, italic("next"), italic("prev"), italic("Min"), italic("Cur"))$,
+they also hold after each transformation
+$(H, T, F, italic("next"), italic("prev"), italic("Cur")) arrow.r.bar (H', T', F', italic("next")', italic("prev")', italic("Min")', italic("Cur"))'$---either
 _insert_, _forwardCursor_ or _extractFoundMin_ as defined in @table:insert, @table:cursor-operations
 and @table:extract-min.
 
