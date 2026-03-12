@@ -1,0 +1,8 @@
+{
+    "editor.formatOnSave": true,
+    "tinymist.formatterProseWrap": true,
+    "tinymist.formatterPrintWidth": 100,
+    "[typst]": {
+        "editor.formatOnSave": true
+    },
+}
