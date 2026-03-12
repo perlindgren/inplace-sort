@@ -27,10 +27,6 @@ match X with
 | none   => ∅
 | some x => {n | ∃ k : Nat, k ≥ 1 ∧ iterateOptionNext next (some x) k = some n}
 
--- list predicate (no cycles)
-def isList (next : N → Option N) (X : Option N) : Prop :=
-∀ n ∈ reachableStar next X, n ∉ reachablePlus next (some n)
-
 section List
 
 -- list structure
@@ -116,10 +112,25 @@ reachablePlus next (some C)
 def nodesBefore (next : N → Option N) (H : N) (C : N) : Set N :=
 reachableStar next H \ nodesAfter next C
 
-def valuesOfSet (X : Finset N) (values : N -> V) : Multiset V :=
-X.val.map values
+open Classical in
+noncomputable def setToFinset {N : Type} [Fintype N] [DecidableEq N]
+  (s : Set N) : Finset N :=
+Finset.univ.filter s
 
--- invariants
+noncomputable def valuesOfSet
+  {N V : Type}
+  [Fintype N] [DecidableEq N]
+  (X : Set N) [DecidablePred X]
+  (data : N → Option V) :
+  Multiset V :=
+((setToFinset X).val.filterMap data)
+
+
+-- predicates
+
+-- list predicate (no cycles)
+def isList (next : N → Option N) (X : Option N) : Prop :=
+∀ n ∈ reachableStar next X, n ∉ reachablePlus next (some n)
 
 -- list of used and empty nodes cover all of N, and they do not overlap
 def inv_nodes (h : InplaceList N V) : Prop :=
@@ -142,38 +153,33 @@ h.T ≠ none →
 def inv_min_basic (h : InplaceList N V) : Prop :=
 (h.Min = none ↔ h.H = none)
 
-open Classical
+open Classical in
+noncomputable def inv_cursor
+  {N V : Type}
+  [Fintype N] [DecidableEq N] [LinearOrder V]
+  (h : InplaceList N V) : Prop :=
+match h.Cur, h.H with
+| none, _ => True
+| some _, none => False
+| some (C, minVal, min2Val, prev), some H =>
+  C ∈ reachableStar h.next h.H ∧
+  let nodes :=
+    setToFinset (nodesBefore h.next H C)
+  let valuesBefore :=
+    valuesOfSet nodes h.data
+  minVal = minOfMultiset valuesBefore ∧
+  min2Val = min2OfMultiset valuesBefore ∧
+  match prev with
+  | none => h.data H = some minVal
+  | some prev_node => match h.next prev_node with
+                      | none => False
+                      | some next_node => h.data next_node = some minVal
 
-noncomputable def setToFinset {N : Type} [Fintype N] [DecidableEq N]
-  (s : Set N) : Finset N :=
-Finset.univ.filter s
 
-
-
--- noncomputable def inv_cursor
---   {N V : Type}
---   [Fintype N] [DecidableEq N] [LinearOrder V]
---   (h : InplaceList N V) : Prop :=
-
--- match h.Cur, h.H with
--- | none, _ => True
--- | some _, none => False
--- | some (C, minVal, min2Val, prev), some H =>
-
---   C ∈ reachableStar h.next h.H ∧
-
---   let nodes :=
---     setToFinset (nodesBefore h.next H C)
-
---   let values :=
---     valuesOfSet nodes h.data
-
---   minVal = minOfMultiset values ∧
---   min2Val = min2OfMultiset values
-
--- -- def Invariant (h : InplaceList N V) : Prop :=
--- -- inv_nodes h ∧
--- -- inv_no_loops h ∧
--- -- inv_tail h ∧
--- -- inv_min_basic h --∧
--- --inv_cursor h
+def Invariant {N V : Type}
+  [Fintype N] [DecidableEq N] [LinearOrder V] (h : InplaceList N V) : Prop :=
+inv_nodes h ∧
+inv_no_loops h ∧
+inv_tail h ∧
+inv_min_basic h ∧
+inv_cursor h
