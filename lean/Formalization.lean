@@ -97,24 +97,18 @@ def extractMin {N V : Type} [Fintype N] [DecidableEq N] [LinearOrder V]
 
 end List
 
--- define min and min2
-section MinValues
 
--- min of a nonempty finite set
--- noncomputable def minOfFinset (X : Finset V) [LinearOrder V] [Fintype V] [Nonempty V] : Option V :=
--- X.val.toList.minimum
+-- min of a finite multiset
+noncomputable def minOfMultiset (X : Multiset V) [LinearOrder V] [Fintype V] : Option V :=
+X.toFinset.val.toList.minimum
 
--- -- second smallest of a finite set
--- noncomputable def min2OfFinset (X: Finset V) [LinearOrder V] [Fintype V]: Option V
--- def min2OfFinset (X : Finset V) (h : X.nonempty) : Option V :=
--- if X.card = 1 then none else
--- let m := Finset.min' X h
--- let X' := X.erase m
--- if X'.nonempty then some (Finset.min' X' (Finset.card_pos.2 (by
---   simp [X', h])) )
--- else some m
-
-end MinValues
+-- second smallest item (min2) of a finite multiset
+noncomputable def min2OfMultiset (X : Multiset V) [LinearOrder V] [Fintype V] : Option V :=
+match minOfMultiset X with
+| none => none
+| some m =>
+    let X' := X.erase m
+    minOfMultiset X'
 
 def nodesAfter (h : InplaceList N V) (C : N) : Set N :=
 reachablePlus h.next (some C)
