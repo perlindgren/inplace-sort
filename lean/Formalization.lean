@@ -116,6 +116,9 @@ reachablePlus h.next (some C)
 def nodesBefore (h : InplaceList N V) (C : N) : Set N :=
 reachableStar h.next h.H \ nodesAfter h C
 
+def valuesOfSet (X : Finset N) (values : N -> V) [Fintype N]: Multiset V :=
+X.val.map values
+
 -- invariants
 
 -- list of used and empty nodes cover all of N, and they do not overlap
@@ -140,23 +143,23 @@ def inv_min_basic (h : InplaceList N V) : Prop :=
 (h.Min = none ↔ h.H = none)
 
 
--- -- def inv_cursor (h : InplaceList N V) : Prop :=
--- -- match h.Cur with
--- -- | none => True
--- -- | some (C, minVal, min2Val, prev) =>
--- --     -- C ∈ {H→*}
--- --     C ∈ reachableStar h.next h.H ∧
--- --     -- nodes before C
--- --     let nodes := nodesBefore h C
--- --     let vals := dataValues h nodes
--- --     vals.nonempty ∧
--- --     -- min is smallest in vals
--- --     minVal = minOfFinset vals vals.nonempty ∧
--- --     -- min2 follows the rules
--- --     min2Val = min2OfFinset vals vals.nonempty ∧
--- --     -- prev points correctly (either none or to node with data = min)
--- --     (prev = none ∧ h.data (h.H.getD C) = some minVal ∨
--- --      ∃ p, prev = some p ∧ h.data p = some minVal)
+-- def inv_cursor (h : InplaceList N V) : Prop :=
+-- match h.Cur with
+-- | none => True
+-- | some (C, minVal, min2Val, prev) =>
+--     -- C ∈ {H→*}
+--     C ∈ reachableStar h.next h.H ∧
+--     -- nodes before C
+--     let nodes := nodesBefore h C
+--     let vals := dataValues h nodes
+--     vals.nonempty ∧
+--     -- min is smallest in vals
+--     minVal = minOfMultiset vals vals.nonempty ∧
+--     -- min2 follows the rules
+--     min2Val = min2OfMultiset vals vals.nonempty ∧
+--     -- prev points correctly (either none or to node with data = min)
+--     (prev = none ∧ h.data (h.H.getD C) = some minVal ∨
+--      ∃ p, prev = some p ∧ h.data p = some minVal)
 
 -- -- def Invariant (h : InplaceList N V) : Prop :=
 -- -- inv_nodes h ∧
