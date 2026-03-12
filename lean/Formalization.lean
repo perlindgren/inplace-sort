@@ -116,28 +116,28 @@ reachablePlus h.next (some C)
 def nodesBefore (h : InplaceList N V) (C : N) : Set N :=
 reachableStar h.next h.H \ nodesAfter h C
 
--- -- invariants
+-- invariants
 
--- -- -- list of used and empty nodes cover all of N, and they do not overlap
--- -- def inv_nodes (h : InplaceList N V) : Prop :=
--- -- (Set.univ : Set N) =
--- --   reachableStar h.next h.H ∪ reachableStar h.next h.F ∧
--- -- reachableStar h.next h.H ∩ reachableStar h.next h.F = ∅
+-- list of used and empty nodes cover all of N, and they do not overlap
+def inv_nodes (h : InplaceList N V) : Prop :=
+(Set.univ : Set N) =
+  reachableStar h.next h.H ∪ reachableStar h.next h.F ∧
+reachableStar h.next h.H ∩ reachableStar h.next h.F = ∅
 
--- -- -- the lists of used and empty nodes have no loops
--- -- def inv_no_loops (h : InplaceList N V) : Prop :=
--- -- (h.H ≠ none → isList h.next h.H) ∧
--- -- (h.F ≠ none → isList h.next h.F)
+-- the lists of used and empty nodes have no loops
+def inv_no_loops (h : InplaceList N V) : Prop :=
+(h.H ≠ none → isList h.next h.H) ∧
+(h.F ≠ none → isList h.next h.F)
 
--- -- -- T points to the tail of the used nodes list
--- -- def inv_tail (h : InplaceList N V) : Prop :=
--- -- h.T ≠ none →
--- --   (∃ t, h.T = some t ∧
--- --         t ∈ reachableStar h.next h.H ∧
--- --         h.next t = none)
+-- T points to the tail of the used nodes list
+def inv_tail (h : InplaceList N V) : Prop :=
+h.T ≠ none →
+  (∃ t, h.T = some t ∧
+        t ∈ reachableStar h.next h.H ∧
+        h.next t = none)
 
--- def inv_min_basic (h : InplaceList N V) : Prop :=
--- (h.Min = none ↔ h.H = none)
+def inv_min_basic (h : InplaceList N V) : Prop :=
+(h.Min = none ↔ h.H = none)
 
 
 -- -- def inv_cursor (h : InplaceList N V) : Prop :=
