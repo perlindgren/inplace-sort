@@ -46,7 +46,7 @@ structure InplaceList (N V : Type) where
 -- list operations
 
 -- insert a value into the list
-def insertVal {N V : Type} [Fintype N] [DecidableEq N] [LinearOrder V]
+def insertVal {N V : Type} [DecidableEq N] [LinearOrder V]
 (h : InplaceList N V) (v : V) : InplaceList N V :=
 { H := match h.H with
     | some _ => h.F
@@ -74,7 +74,7 @@ def insertVal {N V : Type} [Fintype N] [DecidableEq N] [LinearOrder V]
   Cur := h.Cur }
 
 -- forward cursor (TODO)
-def forwardCursor {N V : Type} [Fintype N] [DecidableEq N] [LinearOrder V]
+def forwardCursor {N V : Type} [DecidableEq N] [LinearOrder V]
 (h : InplaceList N V) : InplaceList N V :=
 { H := h.H,
   T := h.T,
@@ -85,7 +85,7 @@ def forwardCursor {N V : Type} [Fintype N] [DecidableEq N] [LinearOrder V]
   Cur := h.Cur }
 
 -- extract minimum from the list (TODO)
-def extractMin {N V : Type} [Fintype N] [DecidableEq N] [LinearOrder V]
+def extractMin {N V : Type} [DecidableEq N] [LinearOrder V]
 (h : InplaceList N V) : InplaceList N V :=
 { H := h.H,
   T := h.T,
@@ -99,24 +99,24 @@ end List
 
 
 -- min of a finite multiset
-noncomputable def minOfMultiset (X : Multiset V) [LinearOrder V] [Fintype V] : Option V :=
+noncomputable def minOfMultiset (X : Multiset V) [LinearOrder V] : Option V :=
 X.toFinset.val.toList.minimum
 
 -- second smallest item (min2) of a finite multiset
-noncomputable def min2OfMultiset (X : Multiset V) [LinearOrder V] [Fintype V] : Option V :=
+noncomputable def min2OfMultiset (X : Multiset V) [LinearOrder V] : Option V :=
 match minOfMultiset X with
 | none => none
 | some m =>
     let X' := X.erase m
     minOfMultiset X'
 
-def nodesAfter (h : InplaceList N V) (C : N) : Set N :=
-reachablePlus h.next (some C)
+def nodesAfter (next : N → Option N) (C : N) : Set N :=
+reachablePlus next (some C)
 
-def nodesBefore (h : InplaceList N V) (C : N) : Set N :=
-reachableStar h.next h.H \ nodesAfter h C
+def nodesBefore (next : N → Option N) (H : N) (C : N) : Set N :=
+reachableStar next H \ nodesAfter next C
 
-def valuesOfSet (X : Finset N) (values : N -> V) [Fintype N]: Multiset V :=
+def valuesOfSet (X : Finset N) (values : N -> V) : Multiset V :=
 X.val.map values
 
 -- invariants
@@ -142,24 +142,34 @@ h.T ≠ none →
 def inv_min_basic (h : InplaceList N V) : Prop :=
 (h.Min = none ↔ h.H = none)
 
+open Classical
 
--- def inv_cursor (h : InplaceList N V) : Prop :=
--- match h.Cur with
--- | none => True
--- | some (C, minVal, min2Val, prev) =>
---     -- C ∈ {H→*}
---     C ∈ reachableStar h.next h.H ∧
---     -- nodes before C
---     let nodes := nodesBefore h C
---     let vals := dataValues h nodes
---     vals.nonempty ∧
---     -- min is smallest in vals
---     minVal = minOfMultiset vals vals.nonempty ∧
---     -- min2 follows the rules
---     min2Val = min2OfMultiset vals vals.nonempty ∧
---     -- prev points correctly (either none or to node with data = min)
---     (prev = none ∧ h.data (h.H.getD C) = some minVal ∨
---      ∃ p, prev = some p ∧ h.data p = some minVal)
+noncomputable def setToFinset {N : Type} [Fintype N] [DecidableEq N]
+  (s : Set N) : Finset N :=
+Finset.univ.filter s
+
+
+
+-- noncomputable def inv_cursor
+--   {N V : Type}
+--   [Fintype N] [DecidableEq N] [LinearOrder V]
+--   (h : InplaceList N V) : Prop :=
+
+-- match h.Cur, h.H with
+-- | none, _ => True
+-- | some _, none => False
+-- | some (C, minVal, min2Val, prev), some H =>
+
+--   C ∈ reachableStar h.next h.H ∧
+
+--   let nodes :=
+--     setToFinset (nodesBefore h.next H C)
+
+--   let values :=
+--     valuesOfSet nodes h.data
+
+--   minVal = minOfMultiset values ∧
+--   min2Val = min2OfMultiset values
 
 -- -- def Invariant (h : InplaceList N V) : Prop :=
 -- -- inv_nodes h ∧
